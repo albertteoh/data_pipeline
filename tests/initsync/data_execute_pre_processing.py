@@ -30,12 +30,21 @@ DROP_TABLE_SQL = "DROP TABLE IF EXISTS myschema.mytable"
 DROP_TABLE_CASCADE_SQL = "DROP TABLE IF EXISTS myschema.mytable CASCADE"
 
 
-POSTGRES_CREATE_TABLE_SQL = "CREATE TABLE ctl.mytable (col1 VARCHAR(10), _col2_ NUMERIC(5, 6), PRIMARY KEY (col1, _col2_))"
+ORACLE_POSTGRES_CREATE_TABLE_SQL = "CREATE TABLE ctl.mytable (col1 VARCHAR(10), _col2_ SMALLINT, PRIMARY KEY (col1, _col2_))"
+ORACLE_GREENPLUM_CREATE_TABLE_SQL = "CREATE TABLE ctl.mytable (col1 VARCHAR(10), _col2_ SMALLINT, PRIMARY KEY (col1, _col2_)) DISTRIBUTED BY (col1, _col2_)"
+ORACLE_GREENPLUM_CREATE_TABLE_NO_PK_SQL = "CREATE TABLE ctl.mytable (col1 VARCHAR(10), _col2_ SMALLINT)"
 
-GREENPLUM_CREATE_TABLE_SQL = "CREATE TABLE ctl.mytable (col1 VARCHAR(10), _col2_ NUMERIC(5, 6), PRIMARY KEY (col1, _col2_)) DISTRIBUTED BY (col1, _col2_)"
+MSSQL_POSTGRES_CREATE_TABLE_SQL = "CREATE TABLE ctl.mytable (col1 VARCHAR(10), _col2_ NUMERIC(3, 0), PRIMARY KEY (col1, _col2_))"
+MSSQL_GREENPLUM_CREATE_TABLE_SQL = "CREATE TABLE ctl.mytable (col1 VARCHAR(10), _col2_ NUMERIC(3, 0), PRIMARY KEY (col1, _col2_)) DISTRIBUTED BY (col1, _col2_)"
+MSSQL_GREENPLUM_CREATE_TABLE_NO_PK_SQL = "CREATE TABLE ctl.mytable (col1 VARCHAR(10), _col2_ NUMERIC(3, 0))"
 
-GREENPLUM_CREATE_TABLE_NO_PK_SQL = "CREATE TABLE ctl.mytable (col1 VARCHAR(10), _col2_ NUMERIC(5, 6))"
+POSTGRES_POSTGRES_CREATE_TABLE_SQL = MSSQL_POSTGRES_CREATE_TABLE_SQL
+POSTGRES_GREENPLUM_CREATE_TABLE_SQL = MSSQL_GREENPLUM_CREATE_TABLE_SQL
+POSTGRES_GREENPLUM_CREATE_TABLE_NO_PK_SQL = MSSQL_GREENPLUM_CREATE_TABLE_NO_PK_SQL
 
+GREENPLUM_POSTGRES_CREATE_TABLE_SQL = MSSQL_POSTGRES_CREATE_TABLE_SQL
+GREENPLUM_GREENPLUM_CREATE_TABLE_SQL = MSSQL_GREENPLUM_CREATE_TABLE_SQL
+GREENPLUM_GREENPLUM_CREATE_TABLE_NO_PK_SQL = MSSQL_GREENPLUM_CREATE_TABLE_NO_PK_SQL
 
 MOCK_ORACLE_COLUMN_LIST = [
     {
@@ -46,7 +55,7 @@ MOCK_ORACLE_COLUMN_LIST = [
     {
         const.FIELD_NAME: "_col2_",
         const.DATA_TYPE: "NUMBER",
-        const.PARAMS: ["5", "6"],
+        const.PARAMS: ["3", "0"],
     },
 ]
 
@@ -60,7 +69,7 @@ MOCK_GREENPLUM_COLUMN_LIST = [
     {
         const.FIELD_NAME: "_col2_",
         const.DATA_TYPE: "NUMERIC",
-        const.PARAMS: ["5", "6"],
+        const.PARAMS: ["3", "0"],
     },
 ]
 
@@ -73,8 +82,8 @@ MOCK_MSSQL_COLUMN_LIST = [
     },
     {
         const.FIELD_NAME: "_col2_",
-        const.DATA_TYPE: "MONEY",
-        const.PARAMS: ["5", "6"],
+        const.DATA_TYPE: "NUMERIC",
+        const.PARAMS: ["3", "0"],
     },
 ]
 
@@ -270,7 +279,7 @@ tests = [
         droptable=True,
         droptablecascade=True,
         createtable=True,
-        expected_sql=[DROP_TABLE_CASCADE_SQL, POSTGRES_CREATE_TABLE_SQL],
+        expected_sql=[DROP_TABLE_CASCADE_SQL, ORACLE_POSTGRES_CREATE_TABLE_SQL],
     ),
 
     TestCase(
@@ -287,7 +296,7 @@ tests = [
         droptable=True,
         droptablecascade=True,
         createtable=True,
-        expected_sql=[DROP_TABLE_CASCADE_SQL, GREENPLUM_CREATE_TABLE_SQL],
+        expected_sql=[DROP_TABLE_CASCADE_SQL, ORACLE_GREENPLUM_CREATE_TABLE_SQL],
     ),
 
     TestCase(
@@ -304,7 +313,7 @@ tests = [
         droptable=True,
         droptablecascade=True,
         createtable=True,
-        expected_sql=[DROP_TABLE_CASCADE_SQL, GREENPLUM_CREATE_TABLE_SQL],
+        expected_sql=[DROP_TABLE_CASCADE_SQL, GREENPLUM_GREENPLUM_CREATE_TABLE_SQL],
     ),
 
     TestCase(
@@ -321,7 +330,7 @@ tests = [
         droptable=True,
         droptablecascade=True,
         createtable=True,
-        expected_sql=[DROP_TABLE_CASCADE_SQL, GREENPLUM_CREATE_TABLE_SQL],
+        expected_sql=[DROP_TABLE_CASCADE_SQL, MSSQL_GREENPLUM_CREATE_TABLE_SQL],
     ),
 
     TestCase(
@@ -338,7 +347,7 @@ tests = [
         droptable=True,
         droptablecascade=True,
         createtable=True,
-        expected_sql=[DROP_TABLE_CASCADE_SQL, GREENPLUM_CREATE_TABLE_NO_PK_SQL],
+        expected_sql=[DROP_TABLE_CASCADE_SQL, MSSQL_GREENPLUM_CREATE_TABLE_NO_PK_SQL],
     ),
 
 

@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:    file_query_results
 # Purpose:   Represents the query result object returned from a file query
@@ -23,20 +6,28 @@
 ###############################################################################
 
 import itertools
+import csv
 
 from .query_results import QueryResults
 from data_pipeline.stream.file_reader import FileReader
 
 
-def default_post_process_func(line):
-    return line
+def default_post_process_func(record):
+    return record
 
 
 class FileQueryResults(QueryResults):
 
-    def __init__(self, filename, post_process_func):
+    def __init__(self, filename, delimiter, quotechar,
+                 samplerows, post_process_func):
         super(FileQueryResults, self).__init__()
+        
         self._handle = FileReader(filename)
+        self._csvreader = csv.reader(self._handle,
+                                     delimiter=delimiter,
+                                     quotechar=quotechar,)
+        self._samplerows = samplerows
+        self._rowcount = 0
 
         if post_process_func is None:
             self._post_process_func = default_post_process_func
@@ -47,29 +38,52 @@ class FileQueryResults(QueryResults):
         return self
 
     def next(self):
-        line = self._handle.readline().strip('\n')
-        if not line:
+        if self._samplerows is not None and self._rowcount >= self._samplerows:
             self._handle.close()
             raise StopIteration
-        return self._post_process_func(line)
+
+        record = self._csvreader.next()
+        if not record:
+            self._handle.close()
+            raise StopIteration
+
+        self._rowcount += 1
+
+        return self._post_process_func(record)
 
     def fetchone(self):
-        line = None
+        record = None
         try:
-            line = self.next()
+            record = self.next()
         except StopIteration, e:
             pass
-        return line
+        return record
 
     def fetchall(self):
-        return [self._post_process_func(l.strip('\n'))
-                for l in self._handle]
+        if self._samplerows is not None:
+            result = [self._post_process_func(l)
+                      for l in itertools.islice(self._csvreader, self._samplerows)]
+        else:
+            result = [self._post_process_func(l) for l in self._csvreader]
+
+        self._rowcount += len(result)
+        return result
 
     def fetchmany(self, arraysize=None):
         if arraysize > 0:
-            return [self._post_process_func(l.strip('\n'))
-                    for l in itertools.islice(self._handle, arraysize)]
-        return self.fetchall()
+            if (self._samplerows is not None and
+                (self._rowcount + arraysize) > self._samplerows):
+                remainder = self._samplerows - self._rowcount
+                result = [self._post_process_func(l)
+                          for l in itertools.islice(self._csvreader, remainder)]
+            else:
+                result = [self._post_process_func(l)
+                          for l in itertools.islice(self._csvreader, arraysize)]
+        else:
+            result = self.fetchall()
+
+        self._rowcount += len(result)
+        return result
 
     def __del__(self):
         self._handle.close()

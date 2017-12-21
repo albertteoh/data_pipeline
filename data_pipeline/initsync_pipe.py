@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:   initsync_pipe
 # Purpose:  A module that performs an initial sync of data from source to
@@ -40,32 +23,36 @@ import confluent_kafka
 import datetime
 import errno
 import logging
+import multiprocessing
 import os
+import re
+import shlex
 import stat
+import subprocess
 import sys
 import time
 
 import initsync.factory as db_factory
 import data_pipeline.constants.const as const
 import data_pipeline.logger.logging_loader as logging_loader
-import data_pipeline.sql.utils as sql_utils
 import data_pipeline.utils.dbuser as dbuser
 import data_pipeline.utils.mailer as mailer
 
-from multiprocessing import Process, Manager
 from pathos.multiprocessing import ProcessingPool as Pool
+
 from data_pipeline.stream.factory import (build_file_reader,
                                           build_file_writer,
                                           build_kafka_consumer)
 from data_pipeline.common import get_program_args, log_version
-from data_pipeline.sql.utils import TableName
+from data_pipeline.sql.table_name import TableName
 from data_pipeline.audit.factory import get_audit_db
 from data_pipeline.audit.custom_orm import (ProcessControl,
                                             ProcessControlDetail,
                                             SourceSystemProfile)
 
 
-manager = Manager()
+manager = multiprocessing.Manager()
+row_count_re = re.compile(r"(\d+) rows copied\.")
 
 
 class InitSyncKafkaClient(object):
@@ -113,8 +100,8 @@ def parallelise_initsync(argv, ssp_params,
              pcids,
              query_conditions,
              queues,
-             chunksize=1)   # Ensure tables are processed in sequence
-                            # and workers are fully utilised
+             # Ensure tables processed in sequence and workers fully utilised
+             chunksize=1)
 
     pool.close()
     logger.debug("parallelise_initsync: Pool joining")
@@ -146,6 +133,10 @@ def initsync_table(argv, source_conn_details, target_conn_details,
     logging_loader.setup_logging(argv.workdirectory, table_name)
     logger = logging.getLogger(__name__)
 
+    logger.info("{worker} Starting InitSync on table: {table}"
+                .format(worker=multiprocessing.current_process(),
+                        table=table_name))
+
     lsn = None
     source_db = None
     target_db = None
@@ -166,35 +157,51 @@ def initsync_table(argv, source_conn_details, target_conn_details,
             errorlog=logging_loader.get_logfile(const.ERROR_HANDLER)
         )
 
-        source_table = sql_utils.TableName(source_schema, table_name)
-        target_table = sql_utils.TableName(target_schema, table_name)
+        source_table = TableName(source_schema, table_name)
+        target_table = TableName(target_schema, table_name)
 
         source_db = get_source_db(argv, source_conn_details, logger)
+        target_db = get_target_db(argv, target_conn_details, logger)
+
+        # Check if source table exists
         if not _table_exists(
                 argv, source_table, source_db,
                 initsync_msg_queue, pc_detail, logger, const.SOURCE):
             return
 
-        target_db = get_target_db(argv, target_conn_details, logger)
+        logger.debug("Loading column lists from {} DB"
+                     .format(argv.loaddefinition))
+
+        (source_column_list,
+         target_column_list,
+         keycolumnlist) = get_column_lists_by_definition_origin(
+            source_db, source_table,
+            target_db, target_table,
+            definition_origin=argv.loaddefinition)
+
+        logger.debug("\n"
+                     "{table} source_column_list:\n"
+                     "{sourcecols}\n"
+                     "{table} target_column_list:\n"
+                     "{targetcols}\n"
+                     "{table} keycolumnlist:\n"
+                     "{keycols}"
+                     .format(table=table_name,
+                             sourcecols=source_column_list,
+                             targetcols=target_column_list,
+                             keycols=keycolumnlist)
+        )
+
+        execute_pre_processing(argv, target_db, target_table, query_condition,
+                               target_column_list, keycolumnlist,
+                               process_control_id, logger)
+
+        # Check if target table exists after any possible
+        # drop/create table operations
         if not _table_exists(
                 argv, target_table, target_db,
                 initsync_msg_queue, pc_detail, logger, const.TARGET):
             return
-
-        clean_target_table(argv, target_db, target_table, query_condition,
-                           process_control_id)
-
-        if argv.loaddefinition == const.SRC:
-            logger.debug("Loading column lists from SOURCE DB")
-            source_column_list = source_db.get_source_column_list(source_table)
-            target_column_list = source_db.get_target_column_list(source_table)
-        elif argv.loaddefinition == const.DEST:
-            logger.debug("Loading column lists from TARGET DB")
-            source_column_list = target_db.get_source_column_list(target_table)
-            target_column_list = target_db.get_target_column_list(target_table)
-        else:
-            raise Exception("Unsupported load definition: {d}"
-                            .format(d=argv.loaddefinition))
 
         pipe_file = create_pipe(argv, source_table, logger)
 
@@ -209,10 +216,11 @@ def initsync_table(argv, source_conn_details, target_conn_details,
         )
 
         applier_msg_queue = manager.Queue()
-        applier_proc = Process(
+        applier_proc = multiprocessing.Process(
             target=apply,
             args=(argv, pipe_file, target_table, target_column_list,
-                  target_db, process_control_id, applier_msg_queue))
+                  target_db, target_conn_details, process_control_id,
+                  query_condition, applier_msg_queue))
         applier_proc.start()
         apply_status = const.IN_PROGRESS
 
@@ -225,11 +233,12 @@ def initsync_table(argv, source_conn_details, target_conn_details,
             )
 
             extract_msg_queue = manager.Queue()
-            extractor_proc = Process(
+
+            extractor_proc = multiprocessing.Process(
                 target=extract,
                 args=(argv, pipe_file, source_table, source_column_list,
-                      source_db, process_control_id, query_condition,
-                      extract_msg_queue))
+                      source_db, source_conn_details, process_control_id,
+                      query_condition, extract_msg_queue))
             extractor_proc.start()
             extract_status = const.IN_PROGRESS
         else:
@@ -241,7 +250,7 @@ def initsync_table(argv, source_conn_details, target_conn_details,
             applier_proc, apply_status, applier_msg_queue,
             source_table, target_table, initsync_msg_queue, logger)
 
-        execute_post_processing(target_table, target_db)
+        execute_post_processing(argv, target_table, target_db)
 
         _update_source_system_profile(
             argv, source_schema, target_schema,
@@ -260,8 +269,141 @@ def initsync_table(argv, source_conn_details, target_conn_details,
             target_db.close()
 
 
-def execute_post_processing(target_table, target_db):
-    target_db.execute_post_processing(target_table)
+def get_column_lists_by_definition_origin(source_db, source_table,
+                                          target_db, target_table,
+                                          definition_origin):
+    if definition_origin == const.TARGET:
+        column_definition_db = target_db
+        query_table = target_table
+    else:
+        column_definition_db = source_db
+        query_table = source_table
+
+    keycolumnlist_result = column_definition_db.query_keycolumnlist(
+        query_table)
+
+    source_column_query_result = column_definition_db.query_columns(
+        query_table, lowercase=False)
+    source_column_list = source_db.get_decorated_source_column_list(
+        source_column_query_result, definition_origin)
+
+    target_column_query_result = column_definition_db.query_columns(
+        query_table, lowercase=True)
+    target_column_list = target_db.get_decorated_target_column_list(
+        target_column_query_result, definition_origin)
+
+    return (source_column_list, target_column_list, keycolumnlist_result)
+
+
+def execute_pre_processing(
+        argv, target_db, target_table, query_condition,
+        column_list, keycolumnlist, process_control_id, logger):
+
+    # gpload does the truncate/delete for us, so don't do it here
+    # otherwise, it could lead to a deadlock
+    if (argv.delete or argv.truncate) and argv.directload != const.GPLOAD:
+        clean_target_table(argv, target_db, target_table, query_condition,
+                           process_control_id)
+
+    if argv.droptable or argv.droptablecascade:
+        if argv.droptable and argv.droptablecascade:
+            logger.warn("Both droptable and droptablecascade requested. "
+                        "CASCADE will be executed in preference.")
+
+        drop_target_table(argv, target_db, target_table, process_control_id)
+
+    if argv.createtable:
+        create_target_table(argv, target_db, target_table, column_list,
+                            keycolumnlist, process_control_id)
+
+
+def execute_post_processing(argv, target_table, target_db):
+    if argv.vacuum:
+        target_db.vacuum(target_table)
+
+    if argv.analyze:
+        target_db.analyze(target_table)
+
+
+def drop_target_table(argv, target_db, target_table, process_control_id):
+    mode = const.INITSYNCDROP
+    comment = "Dropping target table"
+
+    pc_detail = _insert_new_pc_detail(
+        argv, process_control_id, mode, comment, target_table)
+
+    target_db.drop(target_table, argv.droptablecascade)
+
+    withcascade = const.EMPTY_STRING
+    if argv.droptablecascade:
+        withcascade = " with cascade"
+
+    comment = "Dropped {table}{withcascade}".format(
+                   table=target_table.fullname,
+                   withcascade=withcascade,
+              )
+
+    pc_detail.update(
+        comment=comment,
+        status=const.SUCCESS,
+    )
+
+
+def create_target_table(argv, target_db, target_table, column_list,
+                        keycolumnlist, process_control_id):
+    mode = const.INITSYNCCREATE
+    comment = "Creating target table"
+
+    pc_detail = _insert_new_pc_detail(
+        argv, process_control_id, mode, comment, target_table)
+
+    target_db.create(target_table, column_list, keycolumnlist)
+
+    comment = "Created {table}".format(
+                   table=target_table.fullname,
+              )
+
+    pc_detail.update(
+        comment=comment,
+        status=const.SUCCESS,
+    )
+
+
+def clean_target_table(argv, target_db, target_table,
+                       query_condition, process_control_id):
+    mode = const.INITSYNCTRUNC
+    comment = "Deleting/Truncating target table"
+
+    pc_detail = _insert_new_pc_detail(
+        argv, process_control_id, mode, comment, target_table)
+
+    if argv.delete:
+        rowcount = target_db.delete(target_table, query_condition)
+    elif argv.truncate:
+        rowcount = target_db.truncate(target_table)
+
+    comment = ("Deleted {count} {table} rows"
+               .format(count=rowcount, table=target_table.fullname))
+    pc_detail.update(
+        comment=comment,
+        delete_row_count=rowcount,
+        source_row_count=rowcount,
+        status=const.SUCCESS,
+    )
+
+
+def _insert_new_pc_detail(argv, process_control_id, mode, comment, table):
+    pc_detail = ProcessControlDetail(argv, mode, process_control_id)
+    pc_detail.insert(
+        object_schema=table.schema,
+        object_name=table.name,
+        comment=comment,
+        process_code=mode,
+        infolog=logging_loader.get_logfile(const.INFO_HANDLER),
+        errorlog=logging_loader.get_logfile(const.ERROR_HANDLER)
+    )
+
+    return pc_detail
 
 
 def _manage_child_processes(
@@ -295,6 +437,7 @@ def _manage_child_processes(
         if (extract_status == const.ERROR or extract_status == const.WARNING):
             raise Exception("[{t}] Failed extract".format(t=source_table.name))
 
+        logger.debug("Getting applier result...")
         msg = applier_msg_queue.get(True)
         (apply_msg_timestamp, apply_status, apply_status_msg) = msg
         logger.debug("apply result = {result}".format(result=apply_status))
@@ -429,37 +572,6 @@ def _table_exists(argv, table, db, msg_queue, pc_detail,
     return True
 
 
-def clean_target_table(argv, target_db, target_table,
-                       query_condition, process_control_id):
-    sql = None
-    mode = const.INITSYNCTRUNC
-
-    if argv.delete or argv.truncate:
-        pc_detail = ProcessControlDetail(argv, mode, process_control_id)
-        pc_detail.insert(
-            object_schema=target_table.schema,
-            object_name=target_table.name,
-            comment="Deleting/Truncating target".format(sql=sql),
-            process_code=mode,
-            infolog=logging_loader.get_logfile(const.INFO_HANDLER),
-            errorlog=logging_loader.get_logfile(const.ERROR_HANDLER)
-        )
-
-        if argv.delete:
-            rowcount = target_db.delete(target_table, query_condition)
-        elif argv.truncate:
-            rowcount = target_db.truncate(target_table)
-
-        comment = ("Deleted {count} {table} rows"
-                   .format(count=rowcount, table=target_table.fullname))
-        pc_detail.update(
-            comment=comment,
-            delete_row_count=rowcount,
-            source_row_count=rowcount,
-            status=const.SUCCESS,
-        )
-
-
 def commit_table_lsn(argv, source_table, target_table, lsn):
     ssp_table = TableName(argv.auditschema,
                           const.SOURCE_SYSTEM_PROFILE_TABLE)
@@ -487,7 +599,8 @@ def commit_table_lsn(argv, source_table, target_table, lsn):
 
 
 def extract(argv, fifo_file_path, table, column_list, source_db,
-            process_control_id, query_condition, extract_msg_queue):
+            source_conn_details, process_control_id, query_condition,
+            extract_msg_queue):
 
     logging_loader.setup_logging(
         argv.workdirectory,
@@ -496,12 +609,14 @@ def extract(argv, fifo_file_path, table, column_list, source_db,
     logger = logging.getLogger(__name__)
 
     mode = const.INITSYNCEXTRACT
-    message = ("Starting {mode} for {table}".format(mode=mode,
-                                                    table=table.fullname))
+    message = ("{worker} Starting {mode} for {table}"
+               .format(mode=mode,
+                       table=table.fullname,
+                       worker=multiprocessing.current_process()
+    ))
     logger.info(message)
 
     fifo = None
-    raw_file = None
     record_count = 0
     result = {}
     lsn = None
@@ -523,35 +638,13 @@ def extract(argv, fifo_file_path, table, column_list, source_db,
         logger.debug("Successfully inserted process_control_detail record")
 
         try:
-            logger.debug("source column_list = {l}".format(l=column_list))
-
-            results = source_db.extract_data(
-                column_list, table, query_condition, _log_extract_data_sql)
-
             fifo = build_file_writer(fifo_file_path)
 
-            if argv.rawfile is not None:
-                filename = get_raw_filename(argv, table)
-                raw_file = build_file_writer(filename)
+            _wait_till_applier_is_ready(argv, logger)
 
-            logger.debug("Writing to fifo")
-            record_count = 0
-
-            logger.debug("Fetching many ({}) records at a time..."
-                         .format(argv.arraysize))
-            while True:
-                records = results.fetchmany(argv.arraysize)
-                for record in records:
-                    lsn = write(argv, record, fifo, raw_file)
-                    record_count += 1
-                    _log_progress(table, argv, record_count, logger)
-                    _send_heartbeat(record_count, extract_msg_queue)
-
-                if len(records) < argv.arraysize:
-                    break
-
-            message = ("Extracted {count} {table} records"
-                       .format(count=record_count, table=table.fullname))
+            (message, lsn) = _extract_to_file(
+                argv, fifo, column_list, table, query_condition,
+                source_db, source_conn_details, logger, extract_msg_queue)
 
             logger.info(message)
             pc_detail.update(
@@ -567,19 +660,119 @@ def extract(argv, fifo_file_path, table, column_list, source_db,
             result = (datetime.datetime.now(), lsn, const.SUCCESS, message)
             extract_msg_queue.put(result)
         except Exception, err:
-            err_message = "Failed extract: {err}".format(err=str(err))
+            err_message = ("{worker} Failed extract: {err}"
+                           .format(err=str(err),
+                                   worker=multiprocessing.current_process())
+            )
             report_error(argv, err_message, pc_detail, logger)
             result = (datetime.datetime.now(), lsn, const.ERROR, err_message)
             extract_msg_queue.put(result)
 
-        logger.debug("Finished writing to fifo")
+        logger.debug("{worker} Finished writing to fifo"
+                     .format(worker=multiprocessing.current_process()))
 
     # A catchall to ensure a return message is sent
     except Exception, err:
-        err_message = "Failed extract: {err}".format(err=str(err))
+        err_message = ("{worker} Failed extract: {err}"
+                       .format(err=str(err),
+                               worker=multiprocessing.current_process())
+        )
         logger.exception(err_message)
         result = (datetime.datetime.now(), lsn, const.ERROR, err_message)
         extract_msg_queue.put(result)
+
+
+def _wait_till_applier_is_ready(argv, logger):
+    if argv.directload == const.GPLOAD:
+        logger.debug("Allowing {t}s warmup time for applier"
+                     .format(t=argv.extractwait))
+        time.sleep(argv.extractwait)
+        logger.debug("Done sleeping")
+
+def _extract_to_file(argv, fifo, column_list, table, query_condition,
+                     source_db, source_conn_details, logger,
+                     extract_msg_queue):
+
+    message = const.EMPTY_STRING
+
+    lsn = None
+
+    if argv.directunload == const.BCP:
+        sql = source_db.build_extract_data_sql(
+            column_list, table, argv.extractlsn,
+            argv.samplerows, argv.lock, query_condition)
+
+        cmd = (
+            'bcp "{query}" '
+            'queryout {filename} -S "{host},{port}" '
+            '-U {user} -P {password} -d {database} -c -t{delim}').format(
+                query=sql,
+                filename=fifo.filename,
+                host=source_conn_details.host,
+                port=source_conn_details.port,
+                user=source_conn_details.userid,
+                password=source_conn_details.password,
+                database=source_conn_details.dbsid,
+                delim=argv.targetdelimiter,
+            )
+
+        logger.info("{worker} Executing external program: {cmd}"
+                    .format(worker=multiprocessing.current_process(),
+                            cmd=cmd))
+        args = shlex.split(cmd)
+        p = subprocess.Popen(args, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        (out, err) = p.communicate()
+        errcode = p.returncode
+
+        if errcode != 0:
+            raise Exception("""
+                Failed execution of: {cmd}
+                ERRCODE: {errcode}
+                STDOUT: {out}
+                STDERR: {err}""".format(
+                    cmd=cmd, errcode=errcode, out=out, err=err))
+
+        result = row_count_re.search(out)
+        if result:
+            record_count = result.group(1)
+        else:
+            logger.warn("No record count found in bcp output: {}"
+                        .format(out))
+            record_count = 0
+    else:
+        logger.debug("source column_list = {l}".format(l=column_list))
+
+        results = source_db.extract_data(
+            column_list, table, query_condition, _log_extract_data_sql)
+
+        raw_file = None
+        if argv.rawfile is not None:
+            filename = get_raw_filename(argv, table)
+            raw_file = build_file_writer(filename)
+
+        logger.debug("Writing to fifo")
+        record_count = 0
+
+        logger.debug("{worker} Fetching many ({n}) records at a time..."
+                     .format(worker=multiprocessing.current_process(),
+                             n=argv.arraysize))
+        while True:
+            records = results.fetchmany(argv.arraysize)
+            for record in records:
+                lsn = write(argv, record, fifo, raw_file)
+                record_count += 1
+                _log_progress(table, argv, record_count, logger)
+                _send_heartbeat(record_count, extract_msg_queue)
+
+            if len(records) < argv.arraysize:
+                break
+
+    return ("{worker} Extracted {count} {table} records"
+            .format(worker=multiprocessing.current_process(),
+                    count=record_count,
+                    table=table.fullname),
+            lsn)
 
 
 def _log_extract_data_sql(argv, table, extract_data_sql):
@@ -593,8 +786,10 @@ def _log_extract_data_sql(argv, table, extract_data_sql):
 
 def _log_progress(table, argv, record_count, logger):
     if record_count % argv.auditcommitpoint == 0:
-        logger.info("{table}: {count} records written to fifo..."
-                    .format(table=table.name, count=record_count))
+        logger.info("{worker} {table}: {count} records written to fifo..."
+                    .format(worker=multiprocessing.current_process(),
+                            table=table.name,
+                            count=record_count))
 
 
 def _send_heartbeat(record_count, extract_msg_queue):
@@ -603,16 +798,21 @@ def _send_heartbeat(record_count, extract_msg_queue):
         extract_msg_queue.put(msg)
 
 
-def apply(argv, file_path, table, column_list,
-          target_db, process_control_id, apply_msg_queue):
+def apply(argv, file_path, table, column_list, target_db,
+          target_conn_details, process_control_id,
+          query_condition, apply_msg_queue):
+
     logging_loader.setup_logging(
         argv.workdirectory,
         "_".join([table.name, "apply"]))
     logger = logging.getLogger(__name__)
 
     mode = const.INITSYNCAPPLY
-    message = "Starting {mode} for {table}".format(mode=mode,
-                                                   table=table.fullname)
+    message = ("{worker} Starting {mode} for {table}"
+               .format(worker=multiprocessing.current_process(),
+                       mode=mode,
+                       table=table.fullname)
+    )
 
     logger.info(message)
     try:
@@ -645,31 +845,56 @@ def apply(argv, file_path, table, column_list,
             )
         else:
             try:
-                logger.debug("Getting source column list for applying")
+                logger.debug("{worker} Getting source column list for applying"
+                             .format(worker=multiprocessing.current_process()))
 
-                def append_metacolname(argv, colname_key, column_list):
-                    colname = argv.metacols.get(colname_key)
-                    if colname:
-                        column_list.append(colname)
+                # If we assume column definitions match between
+                # source and target, then ensure we don't print the columns
+                if argv.assumematchingcolumns:
+                    column_list = None
+                else:
+                    def append_metacolname(argv, colname_key,
+                                           colname_datatype, column_list):
+                        colname = argv.metacols.get(colname_key)
+                        if colname:
+                            column_list.append({const.FIELD_NAME: colname, const.DATA_TYPE: colname_datatype, const.PARAMS: []})
 
-                map(lambda x: append_metacolname(argv, x, column_list),
-                    [const.METADATA_INSERT_TS_COL,
-                     const.METADATA_UPDATE_TS_COL])
+                    map(lambda (colname_key, colname_datatype):
+                        append_metacolname(
+                            argv,
+                            colname_key,
+                            colname_datatype,
+                            column_list
+                        ),
+                        [(const.METADATA_INSERT_TS_COL, "timestamp"),
+                         (const.METADATA_UPDATE_TS_COL, "timestamp")]
+                    )
 
+                logger.info("Starting bulk write...")
                 record_count = target_db.bulk_write(
                     input_file=fifo.handle,
-                    table_name=table.fullname,
-                    sep=const.FIELD_DELIMITER,
+                    table_name=table,
+                    sep=argv.targetdelimiter,
                     null_string=argv.nullstring,
                     column_list=column_list,
-                    quote_char=chr(const.ASCII_GROUPSEPARATOR),
+                    quote_char=argv.quotechar,
                     escape_char=chr(const.ASCII_RECORDSEPARATOR),
-                    size=argv.buffersize)
+                    size=argv.buffersize,
+                    header=argv.header,
+                    host=target_conn_details.host,
+                    port=target_conn_details.port,
+                    user=target_conn_details.userid,
+                    password=target_conn_details.password,
+                    database=target_conn_details.dbsid,
+                    query_condition=query_condition,
+                )
 
                 target_db.commit()
 
-                message = ("Applied {count} {table} records"
-                           .format(count=record_count, table=table.fullname))
+                message = ("{worker} Applied {count} {table} records"
+                           .format(worker=multiprocessing.current_process(),
+                                   count=record_count,
+                                   table=table.fullname))
 
                 logger.info(message)
                 pc_detail.update(
@@ -679,16 +904,24 @@ def apply(argv, file_path, table, column_list,
                     insert_row_count=record_count,
                 )
                 result = (datetime.datetime.now(), const.SUCCESS, message)
+
+                logger.debug("Writing apply result to queue: {}".format(result))
                 apply_msg_queue.put(result)
             except Exception, err:
-                err_message = "Failed apply: {err}".format(err=str(err))
+                err_message = ("{worker} Failed apply: {err}"
+                               .format(err=str(err),
+                                       worker=multiprocessing.current_process())
+                )
                 report_error(argv, err_message, pc_detail, logger)
                 result = (datetime.datetime.now(), const.ERROR, err_message)
                 apply_msg_queue.put(result)
 
     # A catchall to ensure a return message is sent
     except Exception, err:
-        err_message = "Failed apply: {err}".format(err=str(err))
+        err_message = ("{worker} Failed apply: {err}"
+                       .format(err=str(err),
+                               worker=multiprocessing.current_process())
+        )
         logger.exception(err_message)
         result = (datetime.datetime.now(), const.ERROR, err_message)
         apply_msg_queue.put(result)
@@ -727,7 +960,7 @@ def _connect_db(argv, dbtype, conn_details, sourceortarget, logger):
     logger.info("Connecting to {src_or_tgt} {dbtype} db"
                 .format(src_or_tgt=sourceortarget, dbtype=dbtype))
 
-    db = db_factory.build(dbtype, argv, logger)
+    db = db_factory.build(dbtype, argv, logger, sourceortarget)
     db.connect(conn_details)
 
     logger.info("Connected to {src_or_tgt} {dbtype} db"
@@ -735,28 +968,31 @@ def _connect_db(argv, dbtype, conn_details, sourceortarget, logger):
     return db
 
 
-def report_error(argv, message, audit_object, logger):
+def report_error(argv, message, audit_object, logger, alert=False):
     try:
         logger.exception(message)
-
-        subject = "{profile} InitSync ERROR".format(profile=argv.profilename)
-        mailing_list = _build_mailing_list(argv, const.ERROR)
-
-        mailer.send(argv.notifysender,
-                    mailing_list,
-                    subject,
-                    argv.notifysmtpserver,
-                    plain_text_message=message)
-
         if audit_object:
             audit_object.update(
                 comment=message,
                 status=const.ERROR
             )
+
+        if alert:
+            subject = ("{profile} InitSync ERROR"
+                       .format(profile=argv.profilename))
+            mailing_list = _build_mailing_list(argv, const.ERROR)
+
+            mailer.send(argv.notifysender,
+                        mailing_list,
+                        subject,
+                        argv.notifysmtpserver,
+                        plain_text_message=message)
+
     except Exception, e:
         logger.exception("Failed to report error message: '{message}'. "
                          "Exception: {except_message}"
                          .format(message=message, except_message=str(e)))
+        raise
 
 
 def get_raw_filename(argv, table):
@@ -771,7 +1007,7 @@ def prefix_base_filename(table, full_file_path):
     filename = os.path.basename(full_file_path)
     return full_file_path.replace(
         filename,
-        "{table_name}.{filename}".format(table_name=table.name,
+        "{table_name}_{filename}".format(table_name=table.name,
                                          filename=filename))
 
 
@@ -837,7 +1073,7 @@ def write(argv, record, fifo_file, output_file):
 
     record = [value_to_str(v, argv.clientencoding, argv.nullstring)
               for v in record]
-    payload = "{csv}\n".format(csv=const.FIELD_DELIMITER.join(record))
+    payload = "{csv}\n".format(csv=argv.targetdelimiter.join(record))
 
     fifo_file.write(payload)
 
@@ -893,7 +1129,7 @@ def report_initsync_summary(argv, all_table_results, process_control,
         max_lsn=minlsn,
         comment="Completed InitSync",
         status=summary_status,
-        executor_run_id=last_message_offset)
+        applier_marker=last_message_offset)
 
     _send_summary_email(argv, summary_status, all_table_results,
                         erroneous_tables, starttime, endtime)
@@ -1079,8 +1315,11 @@ def main():
                                 starttime, endtime, last_message_offset)
     except Exception, err:
         logger.exception(str(err))
-        report_error(argv, "Failed InitSync: {error}"
-                     .format(error=str(err)), process_control, logger)
+        report_error(argv,
+                     "Failed InitSync: {error}".format(error=str(err)),
+                     process_control,
+                     logger,
+                     alert=True)
 
 
 if __name__ == "__main__":

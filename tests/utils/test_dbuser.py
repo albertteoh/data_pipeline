@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 import pytest
 from data_pipeline.utils.dbuser import get_dbuser_properties
 
@@ -63,7 +46,6 @@ def test_get_dbuser_properties(mocker, input_dbuser, input_password, keyring_pas
 
 @pytest.mark.parametrize("input_data_dir, input_datafile, expect_error", [
     ("data", "tableA.csv", None),
-    ("data", None, "Directory is empty"),
     (None, None, "No such directory"),
 ])
 def test_get_dbuser_properties_data_dir(

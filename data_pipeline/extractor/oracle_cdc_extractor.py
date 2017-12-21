@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:    oracle_cdc_extractor
 # Purpose:   Implements Oracle specific Extraction logic, such as Logminer
@@ -355,32 +338,7 @@ class OracleCdcExtractor(CdcExtractor):
         return value
 
     def build_keycolumnlist(self, schemas, tables):
-        owner_filter = const.EMPTY_STRING
-        if schemas:
-            schema_list = ["'{schema}'".format(schema=s.upper())
-                           for s in schemas]
-            csv_schemas = const.COMMASPACE.join(schema_list)
-            owner_filter = ("AND UPPER(cons.owner) IN ({schemas})"
-                            .format(schemas=csv_schemas))
-
-        table_filter = const.EMPTY_STRING
-        if tables:
-            table_list = ["'{table_name}'".format(table_name=t.upper())
-                          for t in tables]
-            csv_tables = const.COMMASPACE.join(table_list)
-            table_filter = ("AND UPPER(cons.table_name) IN ({tables})"
-                            .format(tables=csv_tables))
-
-        sqlstmt = " ".join([
-            "SELECT cons.table_name tabname, LOWER(column_name) colname",
-            "FROM   all_constraints cons, all_cons_columns col",
-            "WHERE  cons.owner = col.owner",
-            "AND    cons.constraint_name = col.constraint_name",
-            owner_filter,
-            table_filter,
-            "AND   cons.constraint_type IN ('P', 'U')",
-            "ORDER BY 1, col.position"])
-
+        sqlstmt = self.sql_builder.build_keycolumnlist_sql(schemas, tables)
         query_results = self._source_db.execute_query(sqlstmt,
                                                       self._argv.arraysize)
 

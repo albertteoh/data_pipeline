@@ -1,0 +1,28 @@
+2017-11-23 14:55:44|INFO|running time: 10.15 seconds
+2017-11-23 14:55:44|LOG|killing gpfdist
+2017-11-23 14:55:44|LOG|terminating all threads
+2017-11-23 14:55:44|DEBUG|gpfdist: 2017-11-23 14:55:44 23837 WARN signal 15 received. gpfdist exits
+2017-11-23 14:55:44|DEBUG|gpfdist: 2017-11-23 14:55:44 23837 INFO ---------------------------------------
+2017-11-23 14:55:44|DEBUG|gpfdist: 2017-11-23 14:55:44 23837 INFO STATUS: total session(s) 1
+2017-11-23 14:55:44|DEBUG|gpfdist: 2017-11-23 14:55:44 23837 INFO session 0: tid=1510799140-0008817221.0.0.1, fs_error=N/A, is_error=0, nrequest=0 is_get=1, maxsegs=96
+2017-11-23 14:55:44|DEBUG|gpfdist: 2017-11-23 14:55:44 23837 INFO active segids in session: 8 11 13 51 52 54 89 91 92
+2017-11-23 14:55:44|DEBUG|gpfdist: session: [
+2017-11-23 14:55:44|DEBUG|gpfdist:      1510799140-0008817221.0.0.1 :{
+2017-11-23 14:55:44|DEBUG|gpfdist:              nrequest: 0
+2017-11-23 14:55:44|DEBUG|gpfdist:              is_get: 1
+2017-11-23 14:55:44|DEBUG|gpfdist:              path: /path/to/data/file.psv
+2017-11-23 14:55:44|DEBUG|gpfdist:              request: [
+2017-11-23 14:55:44|DEBUG|gpfdist:
+2017-11-23 14:55:44|DEBUG|gpfdist:              ]
+2017-11-23 14:55:44|DEBUG|gpfdist:      }
+2017-11-23 14:55:44|DEBUG|gpfdist: ]
+2017-11-23 14:55:44|DEBUG|gpfdist: 2017-11-23 14:55:44 23837 INFO ---------------------------------------
+2017-11-23 14:55:44|LOG|all threads are terminated
+2017-11-23 14:55:44|LOG|removing temporary data
+2017-11-23 14:55:44|DEBUG|connection string: user=foo host=targethost port=1234 database=mydb
+2017-11-23 14:55:44|DEBUG|Successfully connected to database
+2017-11-23 14:55:44|DEBUG|drop external table if exists ext_gpload_282490a8_d002_11e7_94d1_fa163e8e2cbb
+2017-11-23 14:55:44|INFO|rows Inserted          = 99
+2017-11-23 14:55:44|INFO|rows Updated           = 0
+2017-11-23 14:55:44|INFO|data formatting errors = 0
+2017-11-23 14:55:44|INFO|gpload succeeded

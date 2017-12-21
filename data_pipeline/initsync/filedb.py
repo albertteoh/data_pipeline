@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:    filedb
 # Purpose:   Contains file specific initsync functions
@@ -24,33 +7,67 @@
 ###############################################################################
 
 
+import datetime
+
+import data_pipeline.constants.const as const
+
 from exceptions import NotSupportedException
 from initsyncdb import InitSyncDb
 
 
 class FileDb(InitSyncDb):
-    def __init__(self, argv, db, logger):
+    def __init__(self, argv, db, logger, delimiter, quotechar):
         super(FileDb, self).__init__(argv, db, logger)
+        self._db.delimiter = delimiter
+        self._db.quotechar = quotechar
+        self._now_str = datetime.datetime.now().strftime(const.TIMESTAMP_FORMAT)
 
-    def get_source_column_list(self, table):
+    def query_columns(self, table, lowercase):
         raise NotSupportedException(
-            "get_source_column_list currently not supported for Files")
+            "query_columns currently not supported for Files")
 
-    def get_target_column_list(self, table):
-        raise NotSupportedException(
-            "get_target_column_list currently not supported for Files")
+    def get_decorated_source_column_list(
+            self,
+            column_list_query_result,
+            definition_origin):
+        return map(self._build_column_entry, column_list_query_result)
+
+    def get_decorated_target_column_list(
+            self,
+            column_list_query_result,
+            definition_origin):
+        return map(self._build_column_entry, column_list_query_result)
+
+    def _build_column_entry(self, row):
+        (colname, datatype, params) = row
+        column_entry = {
+            const.FIELD_NAME: colname,
+            const.DATA_TYPE: datatype,
+            const.PARAMS: params,
+        }
+        return column_entry
 
     def _pre_extract(self):
         pass
 
     def _post_extract(self, record):
-        return record.split(self._argv.delimiter)
+        """Perform some post extract logic on the extracted record
+        In the case of filedb, we want to perform additional actions
+        based on metacol definitions
+        """
 
-    def execute_post_processing(self, target_table):
-        pass
+        ins_colname = self._argv.metacols.get(const.METADATA_INSERT_TS_COL)
+        if ins_colname:
+            record.append(self._now_str)
 
-    def _build_extract_data_sql(self, column_list, table, extractlsn,
-                                samplerows, lock, query_condition):
+        upd_colname = self._argv.metacols.get(const.METADATA_UPDATE_TS_COL)
+        if upd_colname:
+            record.append(self._now_str)
+
+        return record
+
+    def build_extract_data_sql(self, column_list, table, extractlsn,
+                               samplerows, lock, query_condition):
         """For file-based extracts, the query string is simply the
         tablename and, by convention, the underlying FileDb will
         search for files with a basename of the tablename.
@@ -66,6 +83,7 @@ class FileDb(InitSyncDb):
             - foo-bar.csv
             - foo_bar.csv
         """
+        self._db.samplerows = samplerows
         return str(table.name)
 
     def table_exists(self, table):
@@ -82,3 +100,7 @@ class FileDb(InitSyncDb):
     def truncate(self, table):
         raise NotSupportedException(
             "truncate currently not supported for Files")
+
+    def drop(self, table, cascade):
+        raise NotSupportedException(
+            "drop currently not supported for Files")

@@ -4,16 +4,17 @@
 <p class="text-primary font-weight-bold" style="font-size:18px;">Connections</p>    
 
 <form action"." method="POST">
- <div class="form-group row">
-   <div class="col-xs-4">
+<table class="table">
+  <tr class="col-xs-6">
+    <td>
      <label for="category" style="font-size:16px;">Connection Category</label>
      <select class="form-control" name="category" id="category">
        <option selected="selected">ALL</option>
        <option>Source</option>
        <option>Target</option>
      </select>
-   </div>
-   <div class="col-xs-4">
+    </td>
+    <td>
      <label for="database" style="font-size:16px;">Database Type</label>
      <select class="form-control" name="database" id="database">
        <option selected="selected">ALL</option>
@@ -23,16 +24,17 @@
        <option>GreenPlum</option>
        <option>DB2</option>                          
      </select>
-   </div>
-
-   <div class="col-xs-4">
+    </td>
+    
+    <td style="vertical-align:bottom;">  
      <button type="submit" class="btn btn-primary" name="search-form" >Search</button>
      {% if g.user.is_authenticated %}
      <input TYPE="button" class="btn btn-primary" VALUE="Add New Connection"
         onclick="window.location.href='/addconnection';"> 
      {% endif %}
-   </div>
-  </div>
+    </td>     
+  </tr>
+</table>
 </form>  
 
        

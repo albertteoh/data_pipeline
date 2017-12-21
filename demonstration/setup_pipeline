@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# This script to be run on data_pipeline server
+cd /usr/local/data_pipeline
+
+make

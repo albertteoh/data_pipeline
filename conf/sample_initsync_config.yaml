@@ -148,6 +148,7 @@ truncate: False
 
 # Delete table records on target prior to initsync
 delete: True
+
 # Extra sql condition added to extraction query
 querycondition: None
 
@@ -162,9 +163,26 @@ analyze: True
 # Executes a VACCUM FULL on target DB per table after successful apply
 vacuum: True
 
-# Seconds to wait before timing out. By default, initsync will wait indefinitely for extractor
+# Seconds to wait before timing out. By default, initsync will wait
+# indefinitely for extractor
 extracttimeout: None
 
 # Execute extraction query without share lock
 lock: False
 
+# The string used to identify a NULL value
+nullstring: NA
+
+# Instructs extractor module to surround column names with special characters
+# when querying the source db to handle non standard column names
+nonstandardcolumnnames: True
+
+# The bespoke program to run for extracting data, used to optimise
+# extraction performance
+directunload: bcp
+
+# Fields-data value separator character for source
+sourcedelimiter: ,
+
+# Fields-data value separator character for target
+targetdelimiter: 

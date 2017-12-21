@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:  extractor
 # Purpose: Extracts records from a data source and publishes these records
@@ -33,6 +16,7 @@ import traceback
 import data_pipeline.audit.connection_factory as audit_conn_factory
 import data_pipeline.constants.const as const
 import data_pipeline.logger.logging_loader as logging_loader
+import data_pipeline.sql.builder.factory as sql_builder_factory
 import data_pipeline.utils.dbuser as dbuser
 import data_pipeline.utils.mailer as mailer
 
@@ -119,6 +103,7 @@ class Extractor(SignalHandler):
 
     def __init__(self, mode, source_db, argv, audit_factory):
         super(Extractor, self).__init__(mode, argv, audit_factory)
+        self._sql_builder = None
         self._source_db = source_db
         self._keyfieldslist = {}
         self._kafka_producer = None
@@ -140,6 +125,13 @@ class Extractor(SignalHandler):
         self._init_raw_output_file()
         self._init_stream_output()
 
+    @property
+    def sql_builder(self):
+        if self._sql_builder is None:
+            self._sql_builder = sql_builder_factory.build(
+                self._argv.sourcedbtype, self._argv)
+        return self._sql_builder
+
     def extract(self):
         if existing_extract_is_running(self._audit_conn_details, self._argv):
             self._logger.warn(
@@ -158,7 +150,7 @@ class Extractor(SignalHandler):
             self._extract_source_data()
             self._pc.status = const.SUCCESS
         except Exception, err:
-            self._report_error(err)
+            self.report_error(err)
         finally:
             self._write_eob_message()
             self.flush()
@@ -225,7 +217,7 @@ class Extractor(SignalHandler):
         self._pc.status = const.IN_PROGRESS
         self._pc.insert()
 
-    def _report_error(self, error):
+    def report_error(self, error):
         try:
             err_message = ("Failed {mode}: {error}"
                            .format(mode=self._mode, error=str(error)))
@@ -240,8 +232,11 @@ class Extractor(SignalHandler):
             self._pc.update()
             self._logger.exception(err_message)
 
+            mailinglist = set(self._argv.notifysummarylist)
+            mailinglist = mailinglist.union(set(self._argv.notifyerrorlist))
+
             mailer.send(self._argv.notifysender,
-                        self._argv.notifyerrorlist,
+                        mailinglist,
                         err_message,
                         self._argv.notifysmtpserver,
                         plain_text_message=err_message)

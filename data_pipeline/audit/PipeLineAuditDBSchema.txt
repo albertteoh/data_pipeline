@@ -8,66 +8,68 @@ create sequence connections_id_seq increment by 1 start with 1 no cycle ;
 
 
 create table process_control (
- id             	integer primary key default nextval('process_control_id_seq')
+ id                     integer primary key default nextval('process_control_id_seq')
 ,profile_name           varchar(20)
-,profile_version	integer
+,profile_version        integer
 ,process_code           varchar(20)
 ,process_name           varchar(30)
-,source_system_code	varchar(30)
-,source_system_type	varchar(10)
-,source_region		varchar(30)
-,target_system		varchar(30)
-,target_system_type	varchar(10)
-,target_region		varchar(30)
-,process_starttime	timestamp without time zone
-,process_endtime	timestamp without time zone
+,source_system_code     varchar(30)
+,source_system_type     varchar(10)
+,source_region          varchar(30)
+,target_system          varchar(30)
+,target_system_type     varchar(10)
+,target_region          varchar(30)
+,process_starttime      timestamp without time zone
+,process_endtime        timestamp without time zone
 ,min_lsn                varchar(30)
 ,max_lsn                varchar(30)
-,status			varchar(20)
-,duration		numeric(20,4)
+,status                 varchar(20)
+,duration               numeric(20,4)
 ,dml_count              bigint
 ,ddl_count              bigint
 ,other_count            bigint
 ,total_count            bigint
-,comment		varchar(4000)
+,comment                varchar(4000)
 ,filename               varchar(1024)
 ,infolog                varchar(1024)
 ,errorlog               varchar(1024)
 ,executor_run_id        bigint                   
 ,executor_status        varchar(10)
-,executor_logs		integer
-,archive_logs		integer
+,executor_logs          integer
+,archive_logs           integer
 ,object_list            text
+,applier_marker         bigint
+,applier_transaction_id varchar(50)
 );
 
 
 create table process_control_detail (
- id             	integer primary key default nextval('process_control_detail_id_seq')
-,run_id         	integer
+ id                     integer primary key default nextval('process_control_detail_id_seq')
+,run_id                 integer
 ,process_code           varchar(20)
-,object_schema		varchar(30)
-,object_name		varchar(50)
-,process_starttime	timestamp without time zone
-,process_endtime	timestamp without time zone
-,status			varchar(20)
-,source_row_count	bigint
-,insert_row_count	bigint
-,update_row_count	bigint
-,delete_row_count	bigint
-,bad_row_count		bigint
-,alter_count		bigint
-,create_count		bigint
+,object_schema          varchar(30)
+,object_name            varchar(50)
+,process_starttime      timestamp without time zone
+,process_endtime        timestamp without time zone
+,status                 varchar(20)
+,source_row_count       bigint
+,insert_row_count       bigint
+,update_row_count       bigint
+,delete_row_count       bigint
+,bad_row_count          bigint
+,alter_count            bigint
+,create_count           bigint
 ,total_count            bigint
-,duration		numeric(20,4)
-,delta_starttime	timestamp without time zone
-,delta_endtime		timestamp without time zone
-,delta_startlsn		varchar(30)
-,delta_endlsn		varchar(30)
-,error_message		varchar(300)
-,comment		varchar(300)
+,duration               numeric(20,4)
+,delta_starttime        timestamp without time zone
+,delta_endtime          timestamp without time zone
+,delta_startlsn         varchar(30)
+,delta_endlsn           varchar(30)
+,error_message          varchar(300)
+,comment                varchar(300)
 ,filename               varchar(4000)
 ,linked_run_id          bigint                   
-,query_condition	varchar(4000)
+,query_condition        varchar(4000)
 ,infolog                varchar(1024)
 ,errorlog               varchar(1024)
 );
@@ -101,10 +103,10 @@ create table source_system_profile (
 
 
 create table process_parameters (
- id             	integer primary key default nextval('process_parameters_id_seq')
-,parameter_name		varchar(80)
-,parameter_type		varchar(10)
-,parameter_value	varchar(300)
+ id                    integer primary key default nextval('process_parameters_id_seq')
+,parameter_name        varchar(80)
+,parameter_type        varchar(10)
+,parameter_value       varchar(300)
 );
 
 

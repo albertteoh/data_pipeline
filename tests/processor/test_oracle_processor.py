@@ -1,26 +1,10 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 import importlib
 import pytest
 import json
 import data_pipeline.constants.const as const
 import data_pipeline.processor.factory as processor_factory
 import data_pipeline.processor.oracle_cdc_processor as oracle_cdc_processor
+import tests.unittest_utils as unittest_utils
 
 from pytest_mock import mocker
 from data_pipeline.stream.oracle_message import OracleMessage
@@ -56,6 +40,12 @@ def pytest_generate_tests(metafunc):
             tests = load_tests("{}.{}".format(current_package, fixture))
             metafunc.parametrize(fixture, tests)
 
+@pytest.fixture
+def setup(tmpdir, mocker):
+    mockargv_config = unittest_utils.get_default_argv_config(tmpdir)
+    mockargv = mocker.Mock(**mockargv_config)
+    unittest_utils.setup_logging(mockargv.workdirectory)
+
 
 @pytest.mark.parametrize("operation_code, commit_statement, expected_type", [
     (const.INSERT, 'insert into table() values ()', 'InsertStatement'),
@@ -63,7 +53,7 @@ def pytest_generate_tests(metafunc):
     (const.DELETE, 'delete from table where ', 'DeleteStatement'),
     (const.DDL, "COMMENT ON COLUMN EVA_MIGRATION_ROLLBACK_DATA.EXPORT_LOCALE IS 'To store Entity Minor Version of an object.'", 'NoneType'),
 ])
-def test_process_returns_correct_instance_type(operation_code, commit_statement, expected_type, mocker):
+def test_process_returns_correct_instance_type(operation_code, commit_statement, expected_type, mocker, setup):
 
     oracle_message = OracleMessage()
     oracle_message.operation_code = operation_code
@@ -82,7 +72,7 @@ def test_process_returns_correct_instance_type(operation_code, commit_statement,
     (const.DELETE),
     (const.EMPTY_STRING),
 ])
-def test_process_empty_message(operation_code, mocker):
+def test_process_empty_message(operation_code, mocker, setup):
     oracle_message = OracleMessage()
     oracle_message.operation_code = operation_code
 
@@ -103,7 +93,7 @@ def execute_statement_parsing_test(operation, data, mocker):
     output = processor.process(oracle_message)
     return output
 
-def test_process_logminer_insert_statements(data_logminer_inserts, mocker):
+def test_process_logminer_insert_statements(data_logminer_inserts, mocker, setup):
     statement = execute_statement_parsing_test(const.INSERT, data_logminer_inserts, mocker)
 
     field_lookup = build_field_indices(data_logminer_inserts.expected_fields)
@@ -115,7 +105,7 @@ def test_process_logminer_insert_statements(data_logminer_inserts, mocker):
         assert statement.get_value(field) == data_logminer_inserts.expected_values[field_lookup[field]]
         i += 1
 
-def test_process_logminer_update_statements(data_logminer_updates, mocker):
+def test_process_logminer_update_statements(data_logminer_updates, mocker, setup):
     statement = execute_statement_parsing_test(const.UPDATE, data_logminer_updates, mocker)
     if statement is None:
         assert len(data_logminer_updates.expected_entries) == 0
@@ -124,7 +114,7 @@ def test_process_logminer_update_statements(data_logminer_updates, mocker):
         assert statement.set_values == data_logminer_updates.expected_set_values
         assert str(statement) == data_logminer_updates.expected_sql
 
-def test_process_logminer_delete_statements(data_logminer_deletes, mocker):
+def test_process_logminer_delete_statements(data_logminer_deletes, mocker, setup):
     statement = execute_statement_parsing_test(const.DELETE, data_logminer_deletes, mocker)
     if statement is None:
         assert len(data_logminer_deletes.expected_sql) == 0
@@ -135,7 +125,7 @@ def test_process_unsupported_operation(data_logminer_rejected_alters):
     with pytest.raises(UnsupportedSqlError):
         statement = execute_statement_parsing_test(const.DDL, data_logminer_rejected_alters, mocker)
 
-def test_process_logminer_alter_statements(data_logminer_alters, mocker):
+def test_process_logminer_alter_statements(data_logminer_alters, mocker, setup):
     statement = execute_statement_parsing_test(const.DDL, data_logminer_alters, mocker)
     if statement is None:
         assert len(data_logminer_alters.expected_entries) == 0
@@ -144,11 +134,12 @@ def test_process_logminer_alter_statements(data_logminer_alters, mocker):
         assert statement.entries == data_logminer_alters.expected_entries
         assert str(statement) == data_logminer_alters.expected_sql
 
-def test_process_logminer_create_statements(data_logminer_creates, mocker):
+def test_process_logminer_create_statements(data_logminer_creates, mocker, setup):
     statement = execute_statement_parsing_test(const.DDL, data_logminer_creates, mocker)
     if statement is None:
         assert len(data_logminer_creates.expected_entries) == 0
         assert len(data_logminer_creates.expected_sql) == 0
     else:
         assert statement.entries == data_logminer_creates.expected_entries
+        print("Expect={}\nActual={}".format(data_logminer_creates.expected_sql, str(statement)))
         assert str(statement) == data_logminer_creates.expected_sql

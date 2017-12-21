@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 import collections
 
 TestCase = collections.namedtuple('TestCase', "description input_table_name input_commit_statement input_primary_key_fields expected_fields expected_values")
@@ -219,24 +202,24 @@ tests=[
 
 , TestCase(
     description="Single value with function containing 2 parameters",
-    input_table_name="MY_TABLE_2", 
-    input_commit_statement='insert into "MY_SCHEMA"."MY_TABLE_2"("START_DATE") values (TO_DATE(\'2017-06-06 15:36:24\', \'YYYY-MM-DD HH24:MI:SS\'))', 
+    input_table_name="IAG_TPA_LEVEL_OF_ACCESS", 
+    input_commit_statement='insert into "KE_AGENTDESKTOP"."IAG_TPA_LEVEL_OF_ACCESS"("START_DATE") values (TO_DATE(\'2017-06-06 15:36:24\', \'YYYY-MM-DD HH24:MI:SS\'))', 
     input_primary_key_fields = None,
     expected_fields=["START_DATE"], 
     expected_values=["2017-06-06 15:36:24"])
 
 , TestCase(
     description="Single value with function containing 5 parameters with special chars",
-    input_table_name="MY_TABLE_2", 
-    input_commit_statement='insert into "MY_SCHEMA"."MY_TABLE_2"("START_DATE") values (TO_DATE(\'2017-06-06 15:36:24\', \'YYYY-MM-DD HH24:MI:SS\', \'param3withcomma,\', \'(param4withbrackets)\', \'(param5with,commas,andbracket\')))', 
+    input_table_name="IAG_TPA_LEVEL_OF_ACCESS", 
+    input_commit_statement='insert into "KE_AGENTDESKTOP"."IAG_TPA_LEVEL_OF_ACCESS"("START_DATE") values (TO_DATE(\'2017-06-06 15:36:24\', \'YYYY-MM-DD HH24:MI:SS\', \'param3withcomma,\', \'(param4withbrackets)\', \'(param5with,commas,andbracket\')))', 
     input_primary_key_fields = None,
     expected_fields=["START_DATE"], 
     expected_values=["2017-06-06 15:36:24"])
 
 , TestCase(
     description="Statement with function containing > 1 parameter followed by NULL date",
-    input_table_name="MY_TABLE_2", 
-    input_commit_statement='insert into "MY_SCHEMA"."MY_TABLE_2"("TPA_ID","ASSET_DESC","POLICY_NUMBER","START_DATE","END_DATE","IS_VIEW","IS_AMEND","POLICY_SOURCE_SYSTEM") values (\'1023401\',\'2014 NISSAN ALMERA MCP0PVZY\',\'MOT017641188\',TO_DATE(\'2017-06-06 15:36:24\', \'YYYY-MM-DD HH24:MI:SS\'),NULL,\'Y\',\'Y\',\'HUON\')', 
+    input_table_name="IAG_TPA_LEVEL_OF_ACCESS", 
+    input_commit_statement='insert into "KE_AGENTDESKTOP"."IAG_TPA_LEVEL_OF_ACCESS"("TPA_ID","ASSET_DESC","POLICY_NUMBER","START_DATE","END_DATE","IS_VIEW","IS_AMEND","POLICY_SOURCE_SYSTEM") values (\'1023401\',\'2014 NISSAN ALMERA MCP0PVZY\',\'MOT017641188\',TO_DATE(\'2017-06-06 15:36:24\', \'YYYY-MM-DD HH24:MI:SS\'),NULL,\'Y\',\'Y\',\'HUON\')', 
     input_primary_key_fields = None,
     expected_fields=["TPA_ID","ASSET_DESC","POLICY_NUMBER","START_DATE","END_DATE","IS_VIEW","IS_AMEND","POLICY_SOURCE_SYSTEM"], 
     expected_values=['1023401','2014 NISSAN ALMERA MCP0PVZY','MOT017641188','2017-06-06 15:36:24',None,'Y','Y','HUON'])
@@ -244,15 +227,15 @@ tests=[
 , TestCase(
     description="Statement with EMPTY_BLOB() and URL",
     input_table_name="GTW_TIMERS", 
-    input_commit_statement='insert into "MY_SCHEMA"."GTW_TIMERS"("TIMER_ID","EXPIRES","INFO","INTERVAL_DUR","STATUS","CALLBACK_TYPE","CALLBACK_URL","CALLBACK_CLASS") values (\'1376678\',\'1496875513488\',EMPTY_BLOB(),\'0\',\'0\',\'1\',\'java:global/cRE/GTW_EnactmentServiceEJB/ActivityRunner!com.gtnet.workflow.enactmentService.ejb.ActivityRunnerHome\',\'com.gtnet.workflow.enactmentService.ejb.ActivityRunnerHome\')', 
+    input_commit_statement='insert into "KE_AGENTDESKTOP"."GTW_TIMERS"("TIMER_ID","EXPIRES","INFO","INTERVAL_DUR","STATUS","CALLBACK_TYPE","CALLBACK_URL","CALLBACK_CLASS") values (\'1376678\',\'1496875513488\',EMPTY_BLOB(),\'0\',\'0\',\'1\',\'java:global/cRE/GTW_EnactmentServiceEJB/ActivityRunner!com.gtnet.workflow.enactmentService.ejb.ActivityRunnerHome\',\'com.gtnet.workflow.enactmentService.ejb.ActivityRunnerHome\')', 
     input_primary_key_fields = None,
     expected_fields=["TIMER_ID","EXPIRES","INFO","INTERVAL_DUR","STATUS","CALLBACK_TYPE","CALLBACK_URL","CALLBACK_CLASS"],
     expected_values=['1376678','1496875513488',None,'0','0','1','java:global/cRE/GTW_EnactmentServiceEJB/ActivityRunner!com.gtnet.workflow.enactmentService.ejb.ActivityRunnerHome','com.gtnet.workflow.enactmentService.ejb.ActivityRunnerHome'])
 
 , TestCase(
     description="Statement with parentheses in values",
-    input_table_name="MY_TABLE", 
-    input_commit_statement="""insert into "MY_SCHEMA"."MY_TABLE"("COMPANY","SEQUENCE","MVYEAR","MVMAKE","MVMODEL","MVSERIES","MVBODY","MVENGTYP","MVENGCAP","MVEQUIP","STDEQUIP","MVTARE") values ('1','124049','2010','LOTUS','EVORA',NULL,'COUPE','FI','35','(2 SEAT)','ABB ABS AC  AL  AW1 CLR EBD EDL IM  LSW PM  PS  PW  RCD RS  SPS TC  TCS','0')""", 
+    input_table_name="IAG_MVDETAIL", 
+    input_commit_statement="""insert into "KE_AGENTDESKTOP"."IAG_MVDETAIL"("COMPANY","SEQUENCE","MVYEAR","MVMAKE","MVMODEL","MVSERIES","MVBODY","MVENGTYP","MVENGCAP","MVEQUIP","STDEQUIP","MVTARE") values ('1','124049','2010','LOTUS','EVORA',NULL,'COUPE','FI','35','(2 SEAT)','ABB ABS AC  AL  AW1 CLR EBD EDL IM  LSW PM  PS  PW  RCD RS  SPS TC  TCS','0')""", 
     input_primary_key_fields = None,
     expected_fields=["COMPANY","SEQUENCE","MVYEAR","MVMAKE","MVMODEL","MVSERIES","MVBODY","MVENGTYP","MVENGCAP","MVEQUIP","STDEQUIP","MVTARE"],
     expected_values=['1','124049','2010','LOTUS','EVORA',None,'COUPE','FI','35','(2 SEAT)','ABB ABS AC  AL  AW1 CLR EBD EDL IM  LSW PM  PS  PW  RCD RS  SPS TC  TCS','0'])

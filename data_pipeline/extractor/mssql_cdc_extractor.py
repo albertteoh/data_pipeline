@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:    mssql_cdc_extractor
 # Purpose:   Implements MSSQL specific Extraction logic
@@ -43,11 +26,11 @@ class MssqlCdcExtractor(CdcExtractor):
         self._message = MssqlMessage()
         self.key_fields = const.EMPTY_STRING
         self.column_names = const.EMPTY_STRING
-        
+
     def get_source_minmax_cdc_point(self, last_run_max_lsn):
         min_lsn = None
         max_lsn = None
-        
+
         #increment the previous MAXLSN and get new MAXLSN!!
         sqldef = "\n".join([
            "DECLARE @from_lsn binary(10), @to_lsn binary(10);"
@@ -55,18 +38,17 @@ class MssqlCdcExtractor(CdcExtractor):
            , "SET @to_lsn  = sys.fn_cdc_get_max_lsn();"
            , "SELECT CONVERT(VARCHAR(50),@from_lsn,2), CONVERT(VARCHAR(50),@to_lsn,2)"])
         sqldef = sqldef.format(PRIORENDSCN=last_run_max_lsn)
-        
+
         query_results = self._source_db.execute_query(sqldef)
         for record in query_results:
             min_lsn = record[0]
             max_lsn = record[1]
-            
+
         if max_lsn == last_run_max_lsn:
             min_lsn = last_run_max_lsn
-                      
+
         self._logger.debug("min_lsn={}, max_lsn={}".format(min_lsn, max_lsn))
         return (min_lsn, max_lsn)
-
 
     def poll_cdcs(self, start_lsn, end_lsn):
         super(MssqlCdcExtractor, self).poll_cdcs(start_lsn, end_lsn)
@@ -77,15 +59,17 @@ class MssqlCdcExtractor(CdcExtractor):
         else:
             schema = const.MSSQL_DEFAULT_SCHEMA
 
-        self._logger.debug("Looking for CDCs in tables={}".format(self._tables))
+        self._logger.debug("Looking for CDCs in tables={}"
+                           .format(self._tables))
 
         for table in self._tables:
             if start_lsn and end_lsn:
 
                 #table="{}_{}".format(self._argv.sourceschema, table)
-                self._logger.info("Polling database CDC points: {} -> {}".format(start_lsn, end_lsn))
-               
-                #TODO consider further validations on start and end LSN numbers                
+                self._logger.info("Polling database CDC points: {} -> {}"
+                                  .format(start_lsn, end_lsn))
+
+                #TODO consider further validations on start and end LSN numbers
                 selectsamplestr = const.EMPTY_STRING
                 if (self._argv.samplerows):
                     selectsamplestr = "TOP " + str(self._argv.samplerows)
@@ -152,16 +136,13 @@ class MssqlCdcExtractor(CdcExtractor):
 
         return self._message.serialise()
 
-    
     def get_column_names(self, query_results):
         # Column names of the table starts at field 8 of query_results
         return const.FIELD_DELIMITER.join(query_results.get_col_names()[COL_NAME_START_INDEX:])
 
-
     def get_column_values(self, row):
         # Column values of the table starts at field 8 of query_results
         return const.FIELD_DELIMITER.join(map(lambda x: '"{}"'.format(x), str(row[COL_NAME_START_INDEX:]).decode(self._argv.clientencoding)))
-
 
     def build_keycolumnlist(self, schemas, tables):
         owner_filter = const.EMPTY_STRING
@@ -203,7 +184,7 @@ class MssqlCdcExtractor(CdcExtractor):
                     keycolumnlist = columnname
 
             self._keyfieldslist[priortablename] = keycolumnlist
-        
+
         for tabname in tables:
             tablename = str(tabname)
             if not self._keyfieldslist.has_key(tablename):

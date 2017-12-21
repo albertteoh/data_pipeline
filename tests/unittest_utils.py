@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 import os
 import data_pipeline.constants.const as const
 import data_pipeline.logger.logging_loader as logging_loader
@@ -30,10 +13,6 @@ def setup_logging(workdirectory):
 def mock_get_program_args(mocker, patch_path, mockargv):
     mock_get_program_args = mocker.patch(patch_path)
     mock_get_program_args.return_value = mockargv
-
-def mock_get_prev_run_cdcs(mocker):
-    mock_get_schemas_and_tables = mocker.patch('data_pipeline.extractor.cdc_extractor.get_prev_run_cdcs')
-    mock_get_schemas_and_tables.return_value = (1, 2)
 
 
 def mock_get_schemas_and_tables(mocker, schemas, tables, all_tables=None):
@@ -112,12 +91,21 @@ def get_default_argv_config(tmpdir):
             "checkexistingextract": False,
             "inputfile": None,
             "seektoend": False,
-            "loaddefinition": const.SRC,
-            "nullstring": const.NULL,
+            "loaddefinition": const.SOURCE,
+            "nullstring": const.EMPTY_STRING,
             "retrypause": 0.1,
             "retry": 0,
             "metacols": {
                 const.METADATA_INSERT_TS_COL: "ctl_ins_ts",
                 const.METADATA_UPDATE_TS_COL: "ctl_upd_ts"
-            }
+            },
+            "nonstandardcolumnnames": False,
+            "delimiter": const.COMMA, 
+            "sourcedelimiter": const.COMMA, 
+            "targetdelimiter": const.FIELD_DELIMITER, 
+            "quotechar": const.DOUBLE_QUOTE, 
+            "extractwait": 0,
+            "droptable": False,
+            "droptablecascade": False,
+            "createtable": False,
         }

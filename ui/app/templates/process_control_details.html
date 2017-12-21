@@ -4,7 +4,7 @@
 <p class="text-primary font-weight-bold" style="font-size:18px;">Process Details</p>  
 <form action"." method="POST">
 <table class="table">
-  <tr>
+  <tr class="col-xs-10">
     <td>
       <label for="runid" style="font-size:16px;">RunID</label>
       <input class="form-control" name="runid" id="runid" type="text" value="{{ runid }}" disabled >
@@ -24,6 +24,10 @@
         <option value="status">Status</option>
         <option value="process_starttime">Start Time</option>
       </select>
+    </td>
+    <td>
+      <label for="object_name"  style="font-size:16px;">Object Name</label> 
+      <input class="form-control" name="object_name"  id="object_name" type="text">
     </td>
     <td style="vertical-align:bottom;"> 
       <button type="submit" class="btn btn-primary" name="submit-form" >Submit</button>

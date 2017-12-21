@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:   args
 # Purpose:  Module defining all switches and arguments used by the following
@@ -184,8 +167,26 @@ def parse_args(arg_list, mode):
     common_args_parser.add_argument(
         "--delimiter",
         nargs='?',
-        default=const.DELIMITER,
+        default=const.FIELD_DELIMITER,
         help="fields-data value separator character")
+    common_args_parser.add_argument(
+        "--sourcedelimiter",
+        nargs='?',
+        default=const.COMMA,
+        help="fields-data value separator character source")
+    common_args_parser.add_argument(
+        "--targetdelimiter",
+        nargs='?',
+        default=const.FIELD_DELIMITER,
+        help="fields-data value separator character for target")
+    common_args_parser.add_argument(
+        "--quotechar",
+        nargs='?',
+        # Why not default to double-quotes? Because varchar values may contain
+        # just a single double-quote such as the symbol for inches, causing the
+        # bulk-writes to get confused about when the string value will end
+        default=chr(const.ASCII_GROUPSEPARATOR),
+        help="character that represents a quotation mark")
     common_args_parser.add_argument(
         "--sourcedbtype",
         nargs='?',
@@ -245,7 +246,7 @@ def parse_args(arg_list, mode):
     common_args_parser.add_argument(
         "--notifysender",
         nargs='?',
-        default="data_pipleine@example.com",
+        default="datapipeline_prod@iag.com.au",
         help="sender email address used when sending notification emails")
     common_args_parser.add_argument(
         "--notifyerrorlist",
@@ -328,9 +329,14 @@ def parse_args(arg_list, mode):
         initsync_args_parser.add_argument(
             "--loaddefinition",
             nargs='?',
-            default=const.SRC,
-            choices=[const.SRC, const.DEST],
+            default=const.SOURCE,
+            choices=[const.SOURCE, const.TARGET],
             help="sql file or dictionary where ddl definition is extracted")
+        initsync_args_parser.add_argument(
+            "--assumematchingcolumns",
+            action='store_true',
+            help="will assume column definitions match both by name "
+                 "and ordinal position")
         initsync_args_parser.add_argument(
             "--parallelmode",
             nargs='?',
@@ -356,7 +362,8 @@ def parse_args(arg_list, mode):
             help="execute extraction query without share lock")
         initsync_args_parser.add_argument(
             "--directunload",
-            action="store_true",
+            nargs='?',
+            choices=[const.BCP],
             help=("use a direct unload utility to extract data from source - "
                   "mssql: bcp"))
         initsync_args_parser.add_argument(
@@ -399,9 +406,16 @@ def parse_args(arg_list, mode):
         initsync_args_parser.add_argument(
             "--extracttimeout",
             nargs='?',
-            default=None,
-            help=("Seconds to wait before timing out. By default, "
-                  "initsync will wait indefinitely for extractor"))
+            default=300,
+            help=("Seconds to wait before timing out the extractor process."))
+        initsync_args_parser.add_argument(
+            "--extractwait",
+            nargs='?',
+            default=0,
+            type=int,
+            help=("Seconds to wait before commencing the extract "
+                  "to allow warmup time for the applier."))
+
         initsync_args_parser.add_argument(
             "--delete",
             action="store_true",
@@ -447,10 +461,59 @@ def parse_args(arg_list, mode):
         initsync_args_parser.add_argument(
             "--nullstring",
             nargs='?',
-            default=const.NULL,
+            default=const.EMPTY_STRING,
             help="the string used to identify a NULL value")
+        initsync_args_parser.add_argument(
+            "--nonstandardcolumnnames",
+            action="store_true",
+            help=("instructs extractor module to surround column names "
+                  "with special characters when querying the source db to "
+                  "handle non standard column names"))
+
+        initsync_args_parser.add_argument(
+            "--directload",
+            nargs='?',
+            choices=[const.GPLOAD],
+            help=("the bespoke program to run for applying data, "
+                  "used to optimise write performance on target"))
+
+        initsync_args_parser.add_argument(
+            "--localhost",
+            nargs='?',
+            help=("the hostname or ip address that is routable from "
+                  "external servers, esp. target DB. Used by gpload"))
+
+        initsync_args_parser.add_argument(
+            "--portrange",
+            nargs='+',
+            default=[8000, 9000],
+            help=("the port range for which gpload can connect on "
+                  "the current localhost"))
+
+        initsync_args_parser.add_argument(
+            "--header",
+            action="store_true",
+            help=("indicate to loader (e.g. COPY or gpload) whether if "
+                  "the first line contains a header"))
+
+        initsync_args_parser.add_argument(
+            "--droptable",
+            action="store_true",
+            help=("will drop all configured tables prior to load"))
+
+        initsync_args_parser.add_argument(
+            "--droptablecascade",
+            action="store_true",
+            help=("will drop cascade all configured tables prior to load"))
+
+        initsync_args_parser.add_argument(
+            "--createtable",
+            action="store_true",
+            help=("will create all configured tables prior to load "
+                  "based on source dictionary"))
 
         parsed_args = initsync_args_parser.parse_args(arg_list)
+        parsed_args = validate_initsync_args(parsed_args) 
         initsync_args_parser.print_values()
 
     elif _is_extract(mode):
@@ -632,8 +695,29 @@ def parse_args(arg_list, mode):
         parsed_args = None
 
     parsed_args = prefix_workdirectory_to_file_args(parsed_args)
+
+    if parsed_args.sourcedelimiter is None:
+        parsed_args.sourcedelimiter = parsed_args.delimiter
+    if parsed_args.targetdelimiter is None:
+        parsed_args.targetdelimiter = parsed_args.delimiter
+
     return parsed_args
 
+
+def validate_initsync_args(parsed_args):
+    if (want_to_drop_or_create_tables(parsed_args) and
+            parsed_args.loaddefinition == const.TARGET):
+        raise Exception("Hmmm... this doesn't look right. Why do you want to "
+                        "drop/create tables on target when target is your "
+                        "column definition?")
+
+    return parsed_args
+
+
+def want_to_drop_or_create_tables(parsed_args):
+    return (parsed_args.droptable or
+            parsed_args.droptablecascade or
+            parsed_args.createtable)
 
 def prefix_workdirectory_to_file_args(parsed_args):
     parsed_args = join_dir_and_file(parsed_args,

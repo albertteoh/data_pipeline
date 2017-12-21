@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ##################################################################################
 # Module:    models.py
 # Purpose:   Flask SQLAlchemy ORM objects
@@ -39,10 +22,10 @@ class ProcessControl(Base):
     process_name = Column(String(30))
     source_system_code = Column(String(30))
     source_system_type = Column(String(10))
-    source_region = Column(String(30))
+    source_region = Column(String(256))
     target_system = Column(String(30))
     target_system_type = Column(String(10))
-    target_region = Column(String(30))
+    target_region = Column(String(256))
     process_starttime = Column(DateTime)
     process_endtime = Column(DateTime)
     min_lsn = Column(String(30))
@@ -57,11 +40,9 @@ class ProcessControl(Base):
     filename = Column(String(1024))
     infolog = Column(String(1024))
     errorlog = Column(String(1024))
-    executor_run_id = Column(BigInteger)
-    executor_status = Column(String(10))
-    executor_logs = Column(Integer)
-    archive_logs = Column(Integer)          
+    applier_marker = Column(BigInteger)         
     object_list = Column(Text)
+    applier_transaction_id = Column(String(50))
 
     def __repr__(self):
         return '<ProcessControl %r>' % (self.profile_name)
@@ -107,8 +88,8 @@ class SourceSystemProfile(Base):
     profile_name = Column(String(20))
     version = Column(Integer)
     source_system_code = Column(String(30))
-    source_region = Column(String(30))
-    target_region = Column(String(30))
+    source_region = Column(String(256))
+    target_region = Column(String(256))
     object_name = Column(String(50))
     object_seq = Column(BigInteger)
     min_lsn = Column(String(30))

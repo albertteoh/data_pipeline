@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 import pytest
 import importlib
 import tests.unittest_utils as unittest_utils
@@ -48,9 +31,11 @@ def setup_dependencies(tmpdir, mocker, metacols, inactive_applied_tables,
 
     mockdbstate = MockDbState()
 
-    db_config = {'closed.side_effect': mockdbstate.closed,
-                 'connect.side_effect': mockdbstate.connect,
-                 'close.side_effect': mockdbstate.close}
+    db_config = {
+        'closed.side_effect': mockdbstate.closed,
+        'connect.side_effect': mockdbstate.connect,
+        'close.side_effect': mockdbstate.close
+    }
     mock_target_db = mocker.Mock(**db_config)
 
     p = tmpdir.mkdir("test_apply_sql_dir")
@@ -101,12 +86,11 @@ def build_mock_audit_factory(mocker, mockargv):
 def patch_db_factory(mocker):
     def execute_query_se(sql, arraysize, bind_variables):
         print("Query executed: {}".format(sql))
-        if "SELECT executor_run_id, executor_status, status" in sql:
-            executor_run_id = 99
-            executor_status = const.SUCCESS
+        if "SELECT applier_marker, status" in sql:
+            applier_marker = 99
             status = const.SUCCESS
             mock_query_results_config = {
-                'fetchone.return_value': (executor_run_id, executor_status, status)
+                'fetchone.return_value': (applier_marker, status)
             }
             return mocker.Mock(**mock_query_results_config)
 

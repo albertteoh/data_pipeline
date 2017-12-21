@@ -4,10 +4,16 @@
 <p class="text-primary font-weight-bold" style="font-size:18px;">Process List</p>   
 <form action"." method="POST">
 <table class="table">
-  <tr>
+  <tr class="col-xs-6">
     <td>
       <label for="profile" style="font-size:16px;">Profile</label>
-      <input class="form-control" name="profile" id="profile" type="text">
+      <select class="form-control" name="profile" id="profile">
+       <option>ALL</option>
+      	{% for profileName in profileNames %}
+
+           <option>{{ profileName.profile_name|safe|trim }}-{{ profileName.profile_version|safe|trim }}</option>
+        {% endfor %}
+     </select>
     </td>
     <td>
       <label for="status"  style="font-size:16px;">Status</label>
@@ -21,15 +27,20 @@
      </select>
     </td>
     <td>
-      <label for="sourcesystem"  style="font-size:16px;">Source System</label> 
-      <input class="form-control" name="sourcesystem"  id="sourcesystem" type="text">
+     <label for="sourcesystem" style="font-size:16px;">Source System</label>
+     <select class="form-control" name="sourcesystem" id="sourcesystem">
+       <option>ALL</option>
+	   {% for sourcesystem in sourcesystems %}
+       <option>{{ sourcesystem.source_system_code|safe }}</option> 
+       {% endfor %}
+     </select>   
     </td>
     
-    <td style="vertical-align:bottom;">  
+    <td style="vertical-align:middle;">  
       <button type="submit" class="btn btn-primary"  id="search-form" name="search-form" >Search</button>
       <input TYPE="button" class="btn btn-primary"  VALUE="Reset"
         onclick="window.location.href='/processlist';">  
-    </td> 
+    </td>     
   </tr>
 </table>
 </form>   
@@ -46,6 +57,8 @@
         <th>Target Schema</th>
         <th>Min LSN</th>
         <th>Max LSN</th>
+        <th>Applier Marker</th>
+        <th>Applier Trans Id</th>
         <th>Start Time</th>
         <th>End Time</th>
         <th>Duration</th>
@@ -63,9 +76,11 @@
            <td><a href="/processdetails/{{ process.id|safe }}">{{ process.status|safe }}</a></td> 
            <td>{%if process.source_system_code %} {{ process.source_system_code|safe }} {% else %}&nbsp;{% endif %}</td> 
            <td>{%if process.source_region %} {{ process.source_region|safe }} {% else %}&nbsp;{% endif %}</td> 
-           <td>{%if process.target_region %} {{ process.target_region|safe }} {% else %}&nbsp;{% endif %}</td> 
-           <td>{{ process.min_lsn|safe|trim }}</td> 
-           <td>{{ process.max_lsn|safe|trim }}</td> 
+           <td>{%if process.target_region %} {{ process.target_region|safe }} {% else %}&nbsp;{% endif %}</td>  
+           <td class="text-nowrap">{%if process.min_lsn %}{{ process.min_lsn |trim }} {% else %}&nbsp;{% endif %}</td> 
+           <td class="text-nowrap">{%if process.max_lsn %}{{ process.max_lsn |trim }} {% else %}&nbsp;{% endif %}</td>
+           <td class="text-nowrap">{%if process.applier_marker %}{{ process.applier_marker |safe }} {% else %}&nbsp;{% endif %}</td> 
+           <td class="text-nowrap">{%if process.applier_transaction_id %}{{ process.applier_transaction_id |safe }} {% else %}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {% endif %}</td>           
            <td class="text-nowrap">{%if process.process_starttime %}{{ process.process_starttime.strftime('%Y-%m-%d %H:%M:%S')|safe }} {% else %}&nbsp;{% endif %}</td> 
            <td class="text-nowrap">{%if process.process_endtime %}{{ process.process_endtime.strftime('%Y-%m-%d %H:%M:%S')|safe }} {% else %}&nbsp;{% endif %}</td> 
            <td class="text-right">{{ process.duration|safe }}</td> 

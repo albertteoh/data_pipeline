@@ -3,8 +3,9 @@
     
 <p class="text-primary font-weight-bold" style="font-size:18px;">Process Control Parameters</p>    
 <form action"." method="POST">
- <div class="form-group row">
-   <div class="col-xs-6">
+<table class="table">
+  <tr class="col-xs-6">
+    <td>
      <label for="parameter_type"  style="font-size:16px;">Parameter Type</label>
      <select class="form-control" name="parameter_type" id="parameter_type">
        <option selected="selected">ALL</option>
@@ -12,14 +13,14 @@
        <option>NUMERIC</option>
        <option>DATE</option>          
      </select>
-   </div>
-
-   <div class="col-xs-6">
+    </td>
+    <td style="vertical-align:bottom;">  
      <button type="submit" class="btn btn-primary" name="search-form" >Search</button>
      <input TYPE="button" class="btn btn-primary" VALUE="Add New Parameter"
         onclick="window.location.href='/addparameter';"> 
-   </div>
-  </div>
+    </td>     
+  </tr>
+</table>
 </form>  
 
        

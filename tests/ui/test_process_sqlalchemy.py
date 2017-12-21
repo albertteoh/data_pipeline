@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 from sqlalchemy import create_engine
 from sqlalchemy import Column, String, Integer, DateTime, Numeric, Text, Sequence, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
@@ -47,8 +30,7 @@ class ProcessControl(base):
     duration = Column(Numeric(precision=20, scale=4))
     comment = Column(String(300))
     filename = Column(String(1024))
-    executor_run_id = Column(BigInteger)
-    executor_status = Column(String(10))
+    applier_marker = Column(BigInteger)
     object_list = Column(Text)
 
 class ProcessControlDetail(base):
@@ -82,7 +64,7 @@ session = Session()
 base.metadata.create_all(db)
 
 # Create Master Record
-process1 = ProcessControl(profile_name="SAM", profile_version="100", process_code="process_code", process_name="process_name", source_system_code="src_code", source_system_type="src_type", source_region="source_region", target_system="target_system", target_system_type="trg_type", target_region="target_region", process_starttime="2017-01-01 00:00:00", process_endtime="2017-01-01 00:00:00", min_lsn="min_lsn", max_lsn="max_lsn", status="status", duration="100", comment="comment", filename="filename",  executor_run_id="1000",  executor_status="ex_status", object_list="object_list")
+process1 = ProcessControl(profile_name="SAM", profile_version="100", process_code="process_code", process_name="process_name", source_system_code="src_code", source_system_type="src_type", source_region="source_region", target_system="target_system", target_system_type="trg_type", target_region="target_region", process_starttime="2017-01-01 00:00:00", process_endtime="2017-01-01 00:00:00", min_lsn="min_lsn", max_lsn="max_lsn", status="status", duration="100", comment="comment", filename="filename",  applier_marker="1000",  object_list="object_list")
 
 session.add(process1)
 session.commit()

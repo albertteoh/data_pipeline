@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:    postgresdb
 # Purpose:   Contains postgres specific initsync functions
@@ -35,7 +18,9 @@ class PostgresDb(SqlDb):
         super(PostgresDb, self).__init__(argv, db, logger)
 
     def _is_string_type(self, datatype):
-        return 'CHAR' in datatype.upper()
+        datatype = datatype.upper()
+        return (datatype in ['TEXT'] or
+                'CHAR' in datatype)
 
     def _get_ascii_function(self):
         return 'CHR'
@@ -48,20 +33,24 @@ class PostgresDb(SqlDb):
         return char_num not in [const.ASCII_NULL]
 
     def _build_colname_sql(self, table, lowercase):
-        colname_select = "column_name"
-        if lowercase:
-            colname_select = "LOWER({})".format(colname_select)
+        column_name_name = "column_name"
+        ignore_cols_sql = self._build_ignore_columns_sql(column_name_name)
+        colname_select = self._build_colname_select(lowercase, column_name_name)
+
         sqlstr = ("""
-        SELECT {colname_select}, data_type
+        SELECT {colname_select}, data_type, character_maximum_length, numeric_precision, numeric_scale
         FROM  INFORMATION_SCHEMA.COLUMNS
         WHERE 1=1
           AND LOWER(table_schema) = LOWER('{source_schema}')
           AND LOWER(table_name) = LOWER('{table_name}')
           AND UPPER(data_type) NOT IN ('IMAGE')
-        ORDER BY ORDINAL_POSITION""".format(
+          {and_not_in_ignored_columns}
+        ORDER BY ordinal_position""".format(
             colname_select=colname_select,
             source_schema=table.schema,
-            table_name=table.name))
+            table_name=table.name,
+            and_not_in_ignored_columns=ignore_cols_sql,
+        ))
         return sqlstr
 
     def _pre_extract(self):
@@ -73,11 +62,16 @@ class PostgresDb(SqlDb):
     def _wrap_colname(self, colname):
         return '"{}"'.format(colname)
 
-    def _collate(self, colname):
+    def _pre_wrap_with_ascii_replace(self, colname, datatype):
         return colname
 
-    def _build_extract_data_sql(self, column_list, table, extractlsn,
-                                samplerows, lock, query_condition):
+    def _post_wrap_with_ascii_replace(self, colname, datatype):
+        return colname
+
+    def build_extract_data_sql(self, column_list, table, extractlsn,
+                               samplerows, lock, query_condition):
+        # We only want the list of column names
+        colnames = self._get_colnames_from_column_list(column_list)
 
         extractlsn_sql = const.EMPTY_STRING
         if extractlsn:
@@ -90,12 +84,12 @@ class PostgresDb(SqlDb):
         SELECT
               {columns}{metacols_sql}{extractlsn_sql}
         FROM {table}
-        WHERE 1=1""".format(columns="\n            , ".join(column_list),
+        WHERE 1=1""".format(columns="\n            , ".join(colnames),
                             metacols_sql=metacols_sql,
                             extractlsn_sql=extractlsn_sql,
                             table=table.fullname)
 
-        sql = self._append_query_condition(sql, query_condition)
+        sql = self._append_query_condition(sql, query_condition, table)
         sql = self._append_samplerows(sql, samplerows)
         return sql
 
@@ -127,7 +121,15 @@ class PostgresDb(SqlDb):
               AND table_name   = '{table_name}'
         )""".format(schema=table.schema.lower(), table_name=table.name.lower())
 
-    def bulk_write(self, **kwargs):
+    def bulk_write(self, host, port, user, password, database,
+                   query_condition, **kwargs):
+        column_list = kwargs['column_list']
+
+        if column_list:
+            # We only want the list of column names
+            colnames = self._get_colnames_from_column_list(column_list)
+            kwargs['column_list'] = list(colnames)
+
         return self._db.copy_expert(**kwargs)
 
     def _build_analyze_sql(self, table):

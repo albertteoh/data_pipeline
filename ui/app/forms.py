@@ -1,23 +1,7 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 from flask_wtf import Form
 from wtforms import TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField, StringField, PasswordField, BooleanField, DateField, DateTimeField
 from wtforms.ext.sqlalchemy.fields import QuerySelectField
+from wtforms.widgets import PasswordInput
 
 from wtforms.validators import DataRequired, Length
 
@@ -30,8 +14,8 @@ class ProfileForm(Form):
     profile_name = StringField('Profile Name :', validators=[DataRequired(), Length(min=1, max=20)])
     profile_version = IntegerField('Profile Version :', validators=[DataRequired()])
     source_system_code = StringField('Source System :', validators=[DataRequired(), Length(min=1, max=10)])
-    source_region = StringField('Source Region :', validators=[Length(max=30)])  
-    target_region = StringField('Target Region :', validators=[Length(max=30)])
+    source_region = StringField('Source Region :', validators=[Length(max=256)])  
+    target_region = StringField('Target Region :', validators=[Length(max=256)])
     object_name = StringField('Object Name :', validators=[DataRequired(), Length(min=1, max=50)])
     active_ind = SelectField('Is Active :',choices=[('Y','Active'),('N','Not Active')],default='Y') 
     min_lsn = StringField('Min LSN :',  validators=[Length(max=30)])  
@@ -60,7 +44,7 @@ class ProfileHeaderForm(Form):
     target_system = StringField('Target System :', validators=[DataRequired(), Length(max=30)])
     target_system_code = StringField('Target System Code :', validators=[Length(max=30)])
     target_database_type = SelectField('Target Database Type :',choices=[('Oracle','Oracle'),('MSSQL','MSSQL'),('Postgres','Postgres'),('DB2','DB2'),('GreenPlum','GreenPlum'),('Kafka','Kafka')],default='Oracle')     
-    target_connection = StringField('Target Connection :', validators=[Length(max=20)])  
+    target_connection = QuerySelectField('Target Connection :', get_pk=lambda a: a.connection_name, get_label=lambda a: a.connection_name, allow_blank=False)
     active_ind = SelectField('Is Active :',choices=[('Y','Active'),('N','Not Active')],default='Y')
     server_path = StringField('Server Run Script Path :', validators=[Length(max=4000)])    
     description = StringField('Description :',  validators=[Length(max=1000)])
@@ -72,7 +56,7 @@ class ConnectionForm(Form):
     hostname = StringField('Server Name:',  validators=[DataRequired(), Length(min=1, max=100)]) 
     portnumber = IntegerField('Port Number:', validators=[DataRequired()])
     username = StringField('User Name:',  validators=[DataRequired(), Length(min=1, max=50)])
-    password = StringField('Password:',  validators=[DataRequired(), Length(min=1, max=50)])
+    password = StringField('Password :', widget=PasswordInput(hide_value=False), validators=[DataRequired(), Length(min=1, max=50)])
     database_name = StringField('SID or Database:',  validators=[DataRequired(), Length(min=1, max=50)])
     notes = StringField('Notes :',  validators=[Length(max=200)])  
     

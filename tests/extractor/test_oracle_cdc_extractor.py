@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 import os
 import pytest
 import data_pipeline.utils.args as args
@@ -73,12 +56,67 @@ EXPECT_START_LOGMNR_CMD = """
             OPTIONS => {}
         )"""
 
+MOCK_ORACLE_STARTSCN = 1
+MOCK_ORACLE_ENDSCN = 2
+MOCK_REDOLOG_NAME = "my_redolog_name"
 
 def build_logminer_options(options):
     return " + ".join(options)
 
-@pytest.fixture()
-def setup(tmpdir, mocker):
+
+def execute_query_se(query, arraysize, redolog_name=MOCK_REDOLOG_NAME):
+
+    if STARTOF_MINMAX_QUERY in query:
+        mock_query_results_config = {'get_col_index.return_value': 1}
+        mock_query_results = Mock(**mock_query_results_config)
+        mock_query_results.__iter__ = Mock(
+            return_value=iter([[MOCK_ORACLE_STARTSCN, MOCK_ORACLE_ENDSCN]]))
+    elif "FROM v$logmnr_contents" in query:
+        mock_row = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        mock_query_results_config = {'get_col_index.return_value': 1,
+                                     'fetchone.return_value': mock_row}
+        mock_query_results = Mock(**mock_query_results_config)
+        mock_query_results.__iter__ = Mock(return_value=iter([mock_row]))
+
+    elif "WHERE DICTIONARY_BEGIN = 'YES'" in query:
+        redolog_name = redolog_name
+        mock_row = [redolog_name]
+        mock_query_results_config = {'get_col_index.return_value': 0,
+                                     'fetchone.return_value': redolog_name}
+        mock_query_results = Mock(**mock_query_results_config)
+        mock_query_results.__iter__ = Mock(return_value=iter([mock_row]))
+    else:
+        mock_query_results_config = {
+            'fetchall.return_value': [('schema', 'table')]
+        }
+        mock_query_results = Mock(**mock_query_results_config)
+        mock_query_results.__iter__ = Mock(return_value=iter([]))
+    return mock_query_results
+
+
+def default_execute_query_se(query, arraysize):
+    return execute_query_se(query, arraysize)
+
+
+def execute_query_no_redolog_se(query, arraysize):
+    return execute_query_se(query, arraysize, redolog_name=None)
+
+
+def mock_get_prev_run_cdcs(mocker):
+    mock_get_prev_run_cdcs = mocker.patch('data_pipeline.extractor.cdc_extractor.get_prev_run_cdcs')
+    mock_get_prev_run_cdcs.return_value = (MOCK_ORACLE_STARTSCN, MOCK_ORACLE_ENDSCN)
+    return mock_get_prev_run_cdcs
+
+
+def setup_mocks(
+        mocker,
+        tmpdir,
+        sourcedictionary=const.ONLINE_DICT,
+        startscn=None,
+        endscn=None,
+        execute_query_se=default_execute_query_se,
+        kill=False,
+    ):
     mockargv_config = unittest_utils.get_default_argv_config(tmpdir)
     mockargv_config = utils.merge_dicts(mockargv_config, {
         'donotload': False,
@@ -86,182 +124,65 @@ def setup(tmpdir, mocker):
         'streamhost': 'host',
         'streamchannel': 'channel',
         'streamschemafile': 'file',
-        'streamschemahost': 'host'})
+        'streamschemahost': 'host',
+        'sourcedictionary': sourcedictionary,
+        'startscn': startscn,
+        'endscn': endscn,
+        'kill': kill,
+    })
     mockargv = mocker.Mock(**mockargv_config)
     unittest_utils.setup_logging(mockargv.workdirectory)
+    unittest_utils.mock_get_schemas_and_tables(mocker, [], [])
 
-    db_config = {'execute_query.side_effect': default_execute_query_se}
+    db_config = {'execute_query.side_effect': execute_query_se}
     mockdb = mocker.Mock(**db_config)
 
     mock_audit_factory = unittest_utils.build_mock_audit_factory(mocker)
 
-    unittest_utils.mock_get_prev_run_cdcs(mocker)
+    mock_get_prev_run_cdcs_func = mock_get_prev_run_cdcs(mocker)
     mock_producer = unittest_utils.mock_build_kafka_producer(mocker)
 
-    yield (OracleCdcExtractor(mockdb, mockargv, mock_audit_factory),
-           mockdb, mockargv, mock_producer, 1, 2)
+    return (OracleCdcExtractor(mockdb, mockargv, mock_audit_factory),
+            mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+            MOCK_ORACLE_STARTSCN, MOCK_ORACLE_ENDSCN)
+
+
+@pytest.fixture()
+def setup(tmpdir, mocker):
+    yield setup_mocks(mocker, tmpdir)
 
 
 @pytest.fixture()
 def setup_scn_override(tmpdir, mocker):
-    ARGV_STARTSCN = 99
-    ARGV_ENDSCN = 100
-    mockargv_config = unittest_utils.get_default_argv_config(tmpdir)
-    mockargv_config = utils.merge_dicts(mockargv_config, {
-        'startscn': ARGV_STARTSCN,
-        'endscn': ARGV_ENDSCN,
-        })
-    mockargv = mocker.Mock(**mockargv_config)
-
-    unittest_utils.setup_logging(mockargv.workdirectory)
-
-    unittest_utils.mock_get_schemas_and_tables(mocker, [], [])
-
-    db_config = {'execute_query.side_effect': default_execute_query_se}
-    mockdb = mocker.Mock(**db_config)
-
-    mock_audit_factory = unittest_utils.build_mock_audit_factory(mocker)
-
-    unittest_utils.mock_get_prev_run_cdcs(mocker)
-    mock_producer = unittest_utils.mock_build_kafka_producer(mocker)
-
-    yield (OracleCdcExtractor(mockdb, mockargv, mock_audit_factory),
-           mockdb, mockargv, ARGV_STARTSCN, ARGV_ENDSCN)
+    yield setup_mocks(mocker, tmpdir, startscn=99, endscn=100)
 
 
 @pytest.fixture()
 def setup_redolog_dict(tmpdir, mocker):
-    mockargv_config = unittest_utils.get_default_argv_config(tmpdir)
-    mockargv_config = utils.merge_dicts(mockargv_config, {
-        'donotload': False,
-        'donotsend': False,
-        'streamhost': 'host',
-        'streamchannel': 'channel',
-        'streamschemafile': 'file',
-        'streamschemahost': 'host',
-        'sourcedictionary': 'redolog'})
-    mockargv = mocker.Mock(**mockargv_config)
-    unittest_utils.setup_logging(mockargv.workdirectory)
-
-    db_config = {'execute_query.side_effect': default_execute_query_se}
-    mockdb = mocker.Mock(**db_config)
-
-    mock_audit_factory = unittest_utils.build_mock_audit_factory(mocker)
-
-    unittest_utils.mock_get_prev_run_cdcs(mocker)
-    mock_producer = unittest_utils.mock_build_kafka_producer(mocker)
-
-    yield (OracleCdcExtractor(mockdb, mockargv, mock_audit_factory),
-           mockdb, mockargv, mock_producer, 1, 2)
+    yield (setup_mocks(mocker, tmpdir,
+              sourcedictionary=const.REDOLOG_DICT
+           )
+    )
 
 
 @pytest.fixture()
 def setup_no_redolog_dict(tmpdir, mocker):
-    mockargv_config = unittest_utils.get_default_argv_config(tmpdir)
-    mockargv_config = utils.merge_dicts(mockargv_config, {
-        'donotload': False,
-        'donotsend': False,
-        'streamhost': 'host',
-        'streamchannel': 'channel',
-        'streamschemafile': 'file',
-        'streamschemahost': 'host',
-        'sourcedictionary': 'redolog'})
-    mockargv = mocker.Mock(**mockargv_config)
-    unittest_utils.setup_logging(mockargv.workdirectory)
-
-    db_config = {'execute_query.side_effect': execute_query_no_redolog_se}
-    mockdb = mocker.Mock(**db_config)
-
-    mock_audit_factory = unittest_utils.build_mock_audit_factory(mocker)
-
-    unittest_utils.mock_get_prev_run_cdcs(mocker)
-    mock_producer = unittest_utils.mock_build_kafka_producer(mocker)
-
-    yield (OracleCdcExtractor(mockdb, mockargv, mock_audit_factory),
-           mockdb, mockargv, mock_producer, 1, 2)
+    yield (setup_mocks(mocker, tmpdir,
+               sourcedictionary=const.REDOLOG_DICT,
+               execute_query_se=execute_query_no_redolog_se,
+           )
+    )
 
 
 @pytest.fixture()
 def setup_kill(tmpdir, mocker):
-    mockargv_config = unittest_utils.get_default_argv_config(tmpdir)
-    mockargv_config = utils.merge_dicts(mockargv_config, {
-        'donotload': False,
-        'donotsend': False,
-        'kill': True})
-    mockargv = mocker.Mock(**mockargv_config)
-    unittest_utils.setup_logging(mockargv.workdirectory)
-
-    db_config = {}
-    mockdb = mocker.Mock(**db_config)
-
-    mock_audit_factory = unittest_utils.build_mock_audit_factory(mocker)
-
-    unittest_utils.mock_get_prev_run_cdcs(mocker)
-    mock_producer = unittest_utils.mock_build_kafka_producer(mocker)
-
-    yield (OracleCdcExtractor(mockdb, mockargv, mock_audit_factory),
-           mockdb, mockargv, mock_producer)
-
-
-def execute_query_no_redolog_se(query, arraysize):
-    if STARTOF_MINMAX_QUERY in query:
-        mock_query_results_config = {'get_col_index.return_value': 1}
-        mock_query_results = Mock(**mock_query_results_config)
-        mock_query_results.__iter__ = Mock(return_value=iter([[1, 2]]))
-    elif "FROM v$logmnr_contents" in query:
-        mock_row = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-        mock_query_results_config = {'get_col_index.return_value': 1,
-                                     'fetchone.return_value': mock_row}
-        mock_query_results = Mock(**mock_query_results_config)
-        mock_query_results.__iter__ = Mock(return_value=iter([mock_row]))
-
-    elif "WHERE DICTIONARY_BEGIN = 'YES'" in query:
-        redolog_name = None
-        mock_row = [redolog_name]
-        mock_query_results_config = {'get_col_index.return_value': 0,
-                                     'fetchone.return_value': redolog_name}
-        mock_query_results = Mock(**mock_query_results_config)
-        mock_query_results.__iter__ = Mock(return_value=iter([mock_row]))
-    else:
-        mock_query_results_config = {
-            'fetchall.return_value': [('schema', 'table')]
-        }
-        mock_query_results = Mock(**mock_query_results_config)
-        mock_query_results.__iter__ = Mock(return_value=iter([]))
-    return mock_query_results
-
-
-
-def default_execute_query_se(query, arraysize):
-    if STARTOF_MINMAX_QUERY in query:
-        mock_query_results_config = {'get_col_index.return_value': 1}
-        mock_query_results = Mock(**mock_query_results_config)
-        mock_query_results.__iter__ = Mock(return_value=iter([[1, 2]]))
-    elif "FROM v$logmnr_contents" in query:
-        mock_row = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-        mock_query_results_config = {'get_col_index.return_value': 1,
-                                     'fetchone.return_value': mock_row}
-        mock_query_results = Mock(**mock_query_results_config)
-        mock_query_results.__iter__ = Mock(return_value=iter([mock_row]))
-
-    elif "WHERE DICTIONARY_BEGIN = 'YES'" in query:
-        redolog_name = 'my_redolog_name'
-        mock_row = [redolog_name]
-        mock_query_results_config = {'get_col_index.return_value': 0,
-                                     'fetchone.return_value': redolog_name}
-        mock_query_results = Mock(**mock_query_results_config)
-        mock_query_results.__iter__ = Mock(return_value=iter([mock_row]))
-    else:
-        mock_query_results_config = {
-            'fetchall.return_value': [('schema', 'table')]
-        }
-        mock_query_results = Mock(**mock_query_results_config)
-        mock_query_results.__iter__ = Mock(return_value=iter([]))
-    return mock_query_results
+    yield setup_mocks(mocker, tmpdir, kill=True)
 
 
 def test_terminate(mocker, setup_kill):
-    (extractor, mockdb, mockargv, mock_producer) = setup_kill
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup_kill
+
     extractor.extract()
     mock_producer.write.assert_called_with({
         'multiline_flag': '',
@@ -279,17 +200,18 @@ def test_terminate(mocker, setup_kill):
 
 
 def test_poll_cdcs_specific_segowners_and_tables(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
 
     unittest_utils.mock_get_schemas_and_tables(
         mocker, ['segA', 'segB'], ['tableA', 'tableB'])
-    extractor.poll_cdcs(start_scn, end_scn)
+    extractor.poll_cdcs(oracle_start_scn, oracle_end_scn)
     mockdb.assert_has_calls([
         mocker.call.execute(const.ALTER_NLS_DATE_FORMAT_COMMAND),
         mocker.call.execute(const.ALTER_NLS_TIMESTAMP_FORMAT_COMMAND),
         mocker.call.execute_stored_proc(
             EXPECT_START_LOGMNR_CMD.format(
-                start_scn, end_scn, build_logminer_options(
+                oracle_start_scn, oracle_end_scn, build_logminer_options(
                     BASE_LOGMNR_OPTIONS + ONLINE_DICT))),
         mocker.call.execute_query(mocker.ANY, 1000),
         mocker.call.execute_stored_proc(STOP_LOGMINER_COMMAND)
@@ -297,15 +219,16 @@ def test_poll_cdcs_specific_segowners_and_tables(mocker, setup):
 
 
 def test_poll_cdcs_specific_segowners_and_all_tables(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
     unittest_utils.mock_get_schemas_and_tables(mocker, ['segA', 'segB'], [])
-    extractor.poll_cdcs(start_scn, end_scn)
+    extractor.poll_cdcs(oracle_start_scn, oracle_end_scn)
     mockdb.assert_has_calls([
         mocker.call.execute(const.ALTER_NLS_DATE_FORMAT_COMMAND),
         mocker.call.execute(const.ALTER_NLS_TIMESTAMP_FORMAT_COMMAND),
         mocker.call.execute_stored_proc(
             EXPECT_START_LOGMNR_CMD.format(
-                start_scn, end_scn, build_logminer_options(
+                oracle_start_scn, oracle_end_scn, build_logminer_options(
                     BASE_LOGMNR_OPTIONS + ONLINE_DICT))),
         mocker.call.execute_query(mocker.ANY, 1000),
         mocker.call.execute_stored_proc(STOP_LOGMINER_COMMAND)
@@ -313,16 +236,17 @@ def test_poll_cdcs_specific_segowners_and_all_tables(mocker, setup):
 
 
 def test_poll_cdcs_all_segowners_and_specific_tables(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
     unittest_utils.mock_get_schemas_and_tables(
         mocker, [], ['tableA', 'tableB'])
-    extractor.poll_cdcs(start_scn, end_scn)
+    extractor.poll_cdcs(oracle_start_scn, oracle_end_scn)
     mockdb.assert_has_calls([
         mocker.call.execute(const.ALTER_NLS_DATE_FORMAT_COMMAND),
         mocker.call.execute(const.ALTER_NLS_TIMESTAMP_FORMAT_COMMAND),
         mocker.call.execute_stored_proc(
             EXPECT_START_LOGMNR_CMD.format(
-                start_scn, end_scn, build_logminer_options(
+                oracle_start_scn, oracle_end_scn, build_logminer_options(
                     BASE_LOGMNR_OPTIONS + ONLINE_DICT))),
         mocker.call.execute_query(mocker.ANY, 1000),
         mocker.call.execute_stored_proc(STOP_LOGMINER_COMMAND)
@@ -330,15 +254,16 @@ def test_poll_cdcs_all_segowners_and_specific_tables(mocker, setup):
 
 
 def test_poll_cdcs_all_segowners_and_tables(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
     unittest_utils.mock_get_schemas_and_tables(mocker, [], [])
-    extractor.poll_cdcs(start_scn, end_scn)
+    extractor.poll_cdcs(oracle_start_scn, oracle_end_scn)
     mockdb.assert_has_calls([
         mocker.call.execute(const.ALTER_NLS_DATE_FORMAT_COMMAND),
         mocker.call.execute(const.ALTER_NLS_TIMESTAMP_FORMAT_COMMAND),
         mocker.call.execute_stored_proc(
             EXPECT_START_LOGMNR_CMD.format(
-                start_scn, end_scn, build_logminer_options(
+                oracle_start_scn, oracle_end_scn, build_logminer_options(
                     BASE_LOGMNR_OPTIONS + ONLINE_DICT))),
         mocker.call.execute_query(mocker.ANY, 1000),
         mocker.call.execute_stored_proc(STOP_LOGMINER_COMMAND)
@@ -346,15 +271,16 @@ def test_poll_cdcs_all_segowners_and_tables(mocker, setup):
 
 
 def test_poll_cdcs_valid_start_end_scn(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
     unittest_utils.mock_get_schemas_and_tables(mocker, [], [])
-    extractor.poll_cdcs(start_scn, end_scn)
+    extractor.poll_cdcs(oracle_start_scn, oracle_end_scn)
     mockdb.assert_has_calls([
         mocker.call.execute(const.ALTER_NLS_DATE_FORMAT_COMMAND),
         mocker.call.execute(const.ALTER_NLS_TIMESTAMP_FORMAT_COMMAND),
         mocker.call.execute_stored_proc(
             EXPECT_START_LOGMNR_CMD.format(
-                start_scn, end_scn, build_logminer_options(
+                oracle_start_scn, oracle_end_scn, build_logminer_options(
                     BASE_LOGMNR_OPTIONS + ONLINE_DICT))),
         mocker.call.execute_query(mocker.ANY, 1000),
         mocker.call.execute_stored_proc(STOP_LOGMINER_COMMAND)
@@ -362,29 +288,40 @@ def test_poll_cdcs_valid_start_end_scn(mocker, setup):
 
 
 def test_extract_source_data_overriden_start_end_scn(mocker, setup_scn_override):
-    (extractor, mockdb, mockargv, start_scn, end_scn) = setup_scn_override
+    (extractor, mockdb, mockargv, mock_producer,  mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup_scn_override
     print("startscn={}, endscn={}".format(mockargv.startscn, mockargv.endscn))
 
     f = mocker.patch.object(extractor, "poll_cdcs")
     extractor._extract_source_data()
-    f.assert_called_once_with(start_scn, end_scn)
+
+    assert mockargv.startscn != oracle_start_scn
+    assert mockargv.endscn != oracle_end_scn
+    mock_get_prev_run_cdcs_func.assert_not_called()
+    f.assert_called_once_with(mockargv.startscn, mockargv.endscn)
 
 
 def test_redolog_dict(mocker, setup_redolog_dict):
-    (extractor, mockdb, mockargv,
-     mock_producer, start_scn, end_scn) = setup_redolog_dict
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup_redolog_dict
 
     unittest_utils.mock_get_schemas_and_tables(mocker, [], [])
-    extractor.poll_cdcs(start_scn, end_scn)
+    extractor.poll_cdcs(oracle_start_scn, oracle_end_scn)
+
+    expected_add_logfile_storedproc = (
+        "DBMS_LOGMNR.ADD_LOGFILE(LOGFILENAME => '{redolog}', "
+        "OPTIONS => DBMS_LOGMNR.NEW)"
+    ).format(redolog=MOCK_REDOLOG_NAME)
+
     mockdb.assert_has_calls([
         mocker.call.execute(const.ALTER_NLS_DATE_FORMAT_COMMAND),
         mocker.call.execute(const.ALTER_NLS_TIMESTAMP_FORMAT_COMMAND),
         mocker.call.execute_query(GET_DICTIONARY_QUERY
-                                  .format(scn=start_scn), 1000),
-        mocker.call.execute_stored_proc("DBMS_LOGMNR.ADD_LOGFILE(LOGFILENAME => 'my_redolog_name', OPTIONS => DBMS_LOGMNR.NEW)"),
+                                  .format(scn=oracle_start_scn), 1000),
+        mocker.call.execute_stored_proc(expected_add_logfile_storedproc),
         mocker.call.execute_stored_proc(
             EXPECT_START_LOGMNR_CMD.format(
-                start_scn, end_scn, build_logminer_options(
+                oracle_start_scn, oracle_end_scn, build_logminer_options(
                     BASE_LOGMNR_OPTIONS + REDOLOG_DICT))),
         mocker.call.execute_query(mocker.ANY, 1000),
         mocker.call.execute_stored_proc(STOP_LOGMINER_COMMAND)
@@ -392,20 +329,20 @@ def test_redolog_dict(mocker, setup_redolog_dict):
 
 
 def test_no_redolog_dict(mocker, setup_no_redolog_dict):
-    (extractor, mockdb, mockargv,
-     mock_producer, start_scn, end_scn) = setup_no_redolog_dict
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup_no_redolog_dict
 
     unittest_utils.mock_get_schemas_and_tables(mocker, [], [])
-    extractor.poll_cdcs(start_scn, end_scn)
+    extractor.poll_cdcs(oracle_start_scn, oracle_end_scn)
     mockdb.assert_has_calls([
         mocker.call.execute(const.ALTER_NLS_DATE_FORMAT_COMMAND),
         mocker.call.execute(const.ALTER_NLS_TIMESTAMP_FORMAT_COMMAND),
         mocker.call.execute_query(GET_DICTIONARY_QUERY
-                                  .format(scn=start_scn), 1000),
+                                  .format(scn=oracle_start_scn), 1000),
         # If no redolog is found, then should go into online dict mode
         mocker.call.execute_stored_proc(
             EXPECT_START_LOGMNR_CMD.format(
-                start_scn, end_scn, build_logminer_options(
+                oracle_start_scn, oracle_end_scn, build_logminer_options(
                     BASE_LOGMNR_OPTIONS + ONLINE_DICT))),
         mocker.call.execute_query(mocker.ANY, 1000),
         mocker.call.execute_stored_proc(STOP_LOGMINER_COMMAND)
@@ -413,7 +350,8 @@ def test_no_redolog_dict(mocker, setup_no_redolog_dict):
 
 
 def test_build_keycolumnlist(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
 
     query_results_config = {'fetchall.return_value': []}
     mock_query_results = mocker.Mock(**query_results_config)
@@ -428,33 +366,37 @@ def test_build_keycolumnlist(mocker, setup):
     extractor.build_keycolumnlist(['schemaA', 'schemaB'], ['tableA', 'tableB'])
     mockdb.assert_has_calls([
         mocker.call.execute_query(
-            "SELECT cons.table_name tabname, LOWER(column_name) colname "
-            "FROM   all_constraints cons, all_cons_columns col "
-            "WHERE  cons.owner = col.owner "
-            "AND    cons.constraint_name = col.constraint_name "
-            "AND UPPER(cons.owner) IN ('SCHEMAA', 'SCHEMAB') "
-            "AND UPPER(cons.table_name) IN ('TABLEA', 'TABLEB') "
-            "AND   cons.constraint_type IN ('P', 'U') "
-            "ORDER BY 1, col.position", 1000),
+            """
+        SELECT cons.table_name tabname, LOWER(column_name) colname
+        FROM all_constraints cons, all_cons_columns col
+        WHERE cons.owner = col.owner
+           AND cons.constraint_name = col.constraint_name
+           AND UPPER(cons.owner) IN ('SCHEMAA', 'SCHEMAB')
+           AND UPPER(cons.table_name) IN ('TABLEA', 'TABLEB')
+           AND cons.constraint_type IN ('P', 'U')
+        ORDER BY 1, col.position""", 1000),
         mocker.call.execute_query(mocker.ANY).fetchall()
     ])
 
 
 def test_poll_cdcs_start_gt_end_scn(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
     unittest_utils.mock_get_schemas_and_tables(mocker, [], [])
     with pytest.raises(InvalidArgumentsError):
         extractor.poll_cdcs(2, 1)
 
 
 def test_connect_to_source_db(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
     extractor.connect_to_source_db()
     mockdb.connect.assert_called_once()
 
 
 def test_write_string_should_raise_error(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
 
     message = "{'a': 'a raw message'}"
     with pytest.raises(TypeError) as type_error:
@@ -466,7 +408,8 @@ def test_write_string_should_raise_error(mocker, setup):
 
 
 def test_write_to_file(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
     message = {'a': 'a raw message'}
     extractor.write(message)
     with open(mockargv.outputfile, 'r') as f:
@@ -482,7 +425,8 @@ def test_write_to_file(mocker, setup):
 def test_successful_run(logminer_contents_query_results,
                         expected_record_count,
                         expected_record_types, mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
 
     logminer_results_deque = deque(logminer_contents_query_results)
     def execute_query_se(query, arraysize):
@@ -537,7 +481,8 @@ def test_successful_run(logminer_contents_query_results,
 
 
 def test_extract_no_profile(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
     unittest_utils.mock_get_schemas_and_tables(mocker, list(), list())
 
     with pytest.raises(InvalidArgumentsError) as invalid_args_error:
@@ -549,7 +494,8 @@ def test_extract_no_profile(mocker, setup):
 
 
 def test_extract_no_schemas_or_tables(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
     unittest_utils.mock_get_schemas_and_tables(mocker, list(), list())
 
     with pytest.raises(InvalidArgumentsError) as invalid_args_error:
@@ -561,7 +507,8 @@ def test_extract_no_schemas_or_tables(mocker, setup):
 
 
 def test_extract_no_schemas_with_tables(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
     unittest_utils.mock_get_schemas_and_tables(mocker, list(), ['MYTABLE'])
 
     with pytest.raises(InvalidArgumentsError) as invalid_args_error:
@@ -574,7 +521,8 @@ def test_extract_no_schemas_with_tables(mocker, setup):
 
 
 def test_extract_with_schemas_no_tables(mocker, setup):
-    (extractor, mockdb, mockargv, mock_producer, start_scn, end_scn) = setup
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
     unittest_utils.mock_get_schemas_and_tables(mocker, ['MYSCHEMA'], list())
 
     with pytest.raises(InvalidArgumentsError) as invalid_args_error:
@@ -584,3 +532,28 @@ def test_extract_with_schemas_no_tables(mocker, setup):
                      "defined in source_system_profile for profile "
                      "'myprofile'")
     assert expect_errstr in str(invalid_args_error.value)
+
+
+@pytest.mark.parametrize("notifysummarylist, notifyerrorlist, expected_mailing_list", [
+    (["a@mail.com"], [], set(["a@mail.com"])),
+    ([], ["a@mail.com"], set(["a@mail.com"])),
+    (["a@mail.com"], ["b@mail.com"], set(["a@mail.com", "b@mail.com"])),
+])
+def test_report_error(notifysummarylist, notifyerrorlist, expected_mailing_list, mocker, setup):
+    (extractor, mockdb, mockargv, mock_producer, mock_get_prev_run_cdcs_func,
+     oracle_start_scn, oracle_end_scn) = setup
+
+    mockargv.notifyerrorlist = notifyerrorlist
+    mockargv.notifysummarylist = notifysummarylist
+
+    error_message = "Oops"
+    mailer_mock = mocker.patch('data_pipeline.extractor.extractor.mailer')
+
+    extractor.report_error(error_message)
+    mailer_mock.send.assert_called_once_with(
+        'someone',
+        expected_mailing_list,
+        'Failed CDCExtract: Oops',
+        'localhost',
+        plain_text_message='Failed CDCExtract: Oops'
+    )

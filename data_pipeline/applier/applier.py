@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:    applier
 # Purpose:   Applies CDCs polled from Kafka queue to a target DB
@@ -28,12 +11,11 @@ import logging
 import os
 import sys
 import time
-import yaml
 
 import data_pipeline.audit.connection_factory as audit_conn_factory
 import data_pipeline.constants.const as const
 import data_pipeline.logger.logging_loader as logging_loader
-import data_pipeline.sql.utils as sql_utils
+import data_pipeline.sql.builder.utils as sql_utils
 import data_pipeline.utils.dbuser as dbuser
 import data_pipeline.utils.filesystem as filesystem_utils
 import data_pipeline.utils.mailer as mailer
@@ -43,6 +25,7 @@ from abc import ABCMeta, abstractmethod
 from data_pipeline.audit.audit_dao import SourceSystemProfile
 from data_pipeline.audit.factory import AuditFactory, get_audit_db
 from data_pipeline.common import SignalHandler
+from data_pipeline.sql.table_name import TableName
 from data_pipeline.stream.file_writer import FileWriter
 from data_pipeline.processor.exceptions import UnsupportedSqlError
 from data_pipeline.utils.args import get_program_args
@@ -97,10 +80,9 @@ def get_inactive_applied_tables(audit_conn_details, argv, logger):
         return tables
 
 
-class CdcApplyRecord:
-    def __init__(self, executor_run_id, executor_status, status):
-        self.executor_run_id = executor_run_id
-        self.executor_status = executor_status
+class CdcApplyRecord(object):
+    def __init__(self, applier_marker, status):
+        self.applier_marker = applier_marker
         self.status = status
 
 
@@ -156,10 +138,12 @@ class BulkOperation(object):
 class Applier(SignalHandler):
     __metaclass__ = ABCMeta
 
-    def __init__(self, mode, target_db, argv, audit_factory, source_processor):
+    def __init__(self, mode, source_processor, target_db, argv, audit_factory,
+                 sql_builder):
         super(Applier, self).__init__(mode, argv, audit_factory)
         self._target_db = target_db
         self._source_processor = source_processor
+        self._sql_builder = sql_builder
         self._output_file = None
         self._batch_started = False
         self._target_conn_details = dbuser.get_dbuser_properties(
@@ -184,8 +168,6 @@ class Applier(SignalHandler):
         self._first_batch_received = False
         self._skip_batches = int(self._argv.skipbatch)
 
-        stream = file(argv.datatypemap)
-        self._config = yaml.load(stream)
         self._stream_message = None
 
         self._bulk_ops = BulkOperation()
@@ -221,7 +203,7 @@ class Applier(SignalHandler):
         # No record previous apply records found
         if self._last_apply_record is None:
             return None
-        return self._last_apply_record.executor_run_id
+        return self._last_apply_record.applier_marker
 
     @property
     def last_status(self):
@@ -276,7 +258,7 @@ class Applier(SignalHandler):
                 retries_remaining -= 1
 
         # Update the next offset to read in case a reassignment is triggered
-        self._last_apply_record.executor_run_id = self.next_message_offset
+        self._last_apply_record.applier_marker = self.next_message_offset
 
         return const.COMMITTED if batch_committed else const.UNCOMMITTED
 
@@ -286,14 +268,12 @@ class Applier(SignalHandler):
                         "Shutting down consumer.")
         self._pc.comment = warn_message
         self._pc.status = const.KILLED
-        self._pc.executor_run_id = self.next_message_offset
-        self._pc.executor_status = const.COMMITTED
+        self._pc.applier_marker = self.next_message_offset
         self._pc.update()
         self._logger.warn(warn_message)
 
     def _can_apply(self, message):
-        t = sql_utils.TableName(self._argv.targetschema.lower(),
-                                message.table_name.lower())
+        t = TableName(self._argv.targetschema.lower(), message.table_name.lower())
 
         if t.fullname in self._inactive_applied_tables:
             self._logger.warn("Table {t} marked as inactive for applies. "
@@ -341,24 +321,22 @@ class Applier(SignalHandler):
     def _get_last_apply_record(self):
         if self._last_apply_record is None:
             self._last_apply_record = CdcApplyRecord(
-                executor_run_id=None,
-                executor_status=const.SUCCESS,
+                applier_marker=None,
                 status=const.SUCCESS
             )
 
         if self._argv.seektoend:
-            self._last_apply_record.executor_run_id = confluent_kafka.OFFSET_END
-            self._last_apply_record.executor_status = const.SUCCESS
+            self._last_apply_record.applier_marker = confluent_kafka.OFFSET_END
             self._last_apply_record.status = const.SUCCESS
             return
 
         sql = """
-        SELECT executor_run_id, executor_status, status
+        SELECT applier_marker, status
         FROM {audit_schema}.process_control
         WHERE id = (
                     SELECT MAX(id)
                     FROM process_control
-                    WHERE executor_run_id > 0
+                    WHERE applier_marker > 0
                       AND profile_name    = %s
                       AND profile_version = %s
                       AND process_code    = %s
@@ -375,9 +353,8 @@ class Applier(SignalHandler):
 
             row = query_results.fetchone()
             if row:
-                self._last_apply_record.executor_run_id = row[0]
-                self._last_apply_record.executor_status = row[1]
-                self._last_apply_record.status = row[2]
+                self._last_apply_record.applier_marker = row[0]
+                self._last_apply_record.status = row[1]
                 self._logger.info("Last committed offset = {offset}"
                                   .format(offset=self.next_offset_to_read))
 
@@ -400,7 +377,7 @@ class Applier(SignalHandler):
                 table_name = row[1].lower()
                 max_lsn = row[2]
 
-                t = sql_utils.TableName(target_region, table_name)
+                t = TableName(target_region, table_name)
                 self._logger.debug("Mapping table->max_lsns from "
                                    "source_system_profile: {t}->{l}"
                                    .format(t=t.fullname, l=max_lsn))
@@ -414,8 +391,7 @@ class Applier(SignalHandler):
         elif self._skip_batches == 0:
             self._received_count += 1
 
-            table = sql_utils.TableName(self._argv.targetschema,
-                                        message.table_name)
+            table = TableName(self._argv.targetschema, message.table_name)
             tablename = table.fullname.lower()
             self._delta_maxlsns_per_table[tablename] = message.commit_lsn
 
@@ -528,8 +504,11 @@ class Applier(SignalHandler):
                         last_committed_state=str(self._last_committed_state),
                         current_message=current_message))
 
+            mailinglist = set(self._argv.notifysummarylist)
+            mailinglist = mailinglist.union(set(self._argv.notifyerrorlist))
+
             mailer.send(self._argv.notifysender,
-                        self._argv.notifyerrorlist,
+                        mailinglist,
                         subject,
                         self._argv.notifysmtpserver,
                         plain_text_message=err_message)
@@ -592,16 +571,7 @@ class Applier(SignalHandler):
         self._logger.debug("Insert count for {t} = {c}"
                            .format(t=statement.table_name,
                                    c=pcd.insert_row_count))
-        return self._build_insert_sql(statement)
-
-    @abstractmethod
-    def _build_insert_sql(self, statement):
-        """Builds target-specific insert sql statement
-        :param InsertStatement statement: The representation of an
-            Insert statement containing all necessary details to
-            create an Insert SQL statement
-        """
-        pass
+        return self._sql_builder.build_insert_sql(statement)
 
     def build_update_sql(self, statement):
         pcd = self.get_pcd(statement.table_name)
@@ -609,16 +579,7 @@ class Applier(SignalHandler):
         self._logger.debug("{t} update row count = {c}"
                            .format(t=statement.table_name,
                                    c=pcd.update_row_count))
-        return self._build_update_sql(statement)
-
-    @abstractmethod
-    def _build_update_sql(self, statement):
-        """Builds target-specific update sql statement
-        :param UpdateStatement statement: The representation of an
-            Update statement containing all necessary details to
-            create an Update SQL statement
-        """
-        pass
+        return self._sql_builder.build_update_sql(statement)
 
     def build_delete_sql(self, statement):
         pcd = self.get_pcd(statement.table_name)
@@ -626,30 +587,12 @@ class Applier(SignalHandler):
         self._logger.debug("{t} delete row count = {c}"
                            .format(t=statement.table_name,
                                    c=pcd.delete_row_count))
-        return self._build_delete_sql(statement)
-
-    @abstractmethod
-    def _build_delete_sql(self, statement):
-        """Builds target-specific delete sql statement
-        :param DeleteStatement statement: The representation of a
-            Delete statement containing all necessary details to
-            create an Delete SQL statement
-        """
-        pass
+        return self._sql_builder.build_delete_sql(statement)
 
     def build_alter_sql(self, statement):
         pcd = self.get_pcd(statement.table_name)
         pcd.alter_count += 1
-        return self._build_alter_sql(statement)
-
-    @abstractmethod
-    def _build_alter_sql(self, statement):
-        """Builds target-specific alter sql statement
-        :param AlterStatement statement: The representation of an
-            Alter statement containing all necessary details to
-            create an Alter SQL statement
-        """
-        pass
+        return self._sql_builder.build_alter_sql(statement)
 
     def build_create_sql(self, statement):
         pcd = self.get_pcd(statement.table_name)
@@ -657,7 +600,7 @@ class Applier(SignalHandler):
 
         self._append_metacols(statement)
 
-        return self._build_create_sql(statement)
+        return self._sql_builder.build_create_sql(statement)
 
     def _append_metacols(self, statement):
         if not self._argv.metacols:
@@ -670,25 +613,6 @@ class Applier(SignalHandler):
                 params=None,
                 constraints=None
             )
-
-    @abstractmethod
-    def _build_create_sql(self, statement):
-        """Builds target-specific create sql statement
-        :param CreateStatement statement: The representation of a
-            Create statement containing all necessary details to
-            create an Create SQL statement
-        """
-        pass
-
-    @abstractmethod
-    def get_target_datatype(self, datatype, params):
-        """Gets the target datatype string given the source datatype
-        and associated params
-        :param string datatype: The source data type
-        :param list params: The source list of associated params for
-            the datatype
-        """
-        pass
 
     def get_pcd(self, table_name):
         pcd = self._pcds.get(table_name, None)
@@ -730,8 +654,7 @@ class Applier(SignalHandler):
 
             self._last_committed_state = self._last_executed_state.copy()
 
-            self._pc.executor_run_id = commit_offset
-            self._pc.executor_status = const.COMMITTED
+            self._pc.applier_marker = commit_offset
 
         self._logger.info(comment)
         self._pc.comment = comment
@@ -759,6 +682,9 @@ class Applier(SignalHandler):
             self._logger.info("Target commit point reached ({c}). "
                               "Committing...".format(c=self._received_count))
 
+            # Ensure all buffered statements are executed out so we get
+            # clean state after commit
+            self._execute_bulk_ops()
             self._commit(message, status=const.IN_PROGRESS)
 
     def _check_record_counts(self, end_of_batch_count, name_count_pairs):
@@ -946,7 +872,6 @@ class Applier(SignalHandler):
         self._logger.debug("Executing: {}".format(sql))
         count = self._target_db.execute(sql)
         self._output_file.write("{}\n".format(sql))
-        self._logger.debug("Successfully executed - {c}".format(c=count))
 
     def _can_buffer(self, statement):
         return (self._argv.bulkapply and

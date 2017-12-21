@@ -48,7 +48,7 @@ cd $rootdir
 find . -name "*pyc" -delete
 
 # Execute style checks. Ignore:
-pep8 --exclude=*/ui/*,tests*/data*,*mssql* data_pipeline tests
+pep8 --exclude=*/ui/* data_pipeline
 
 # Execute unit tests
 echo "Executing unit tests and coverage report..."
@@ -112,7 +112,8 @@ project may be further defined and clarified by project maintainers.
 ### Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported by contacting the project team . All
+reported by contacting the project team (andrew.laspina@cbigconsulting.com.au,
+serdar.erozan@cbigconsulting.com.au, albert.teoh@cbigconsulting.com.au). All
 complaints will be reviewed and investigated and will result in a response that
 is deemed necessary and appropriate to the circumstances. The project team is
 obligated to maintain confidentiality with regard to the reporter of an

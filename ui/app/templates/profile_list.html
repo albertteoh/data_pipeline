@@ -3,8 +3,9 @@
     
 <p class="text-primary font-weight-bold" style="font-size:18px;">System Profiles</p>    
 <form action"." method="POST">
- <div class="form-group row">
-   <div class="col-xs-2">
+<table class="table">
+  <tr class="col-xs-10">
+    <td>
      <label for="profile" style="font-size:16px;">Profile Name</label>
      <select class="form-control" name="profile" id="profile">
        <option>ALL</option>
@@ -12,26 +13,34 @@
        <option>{{ name.profile_name|safe }}</option> 
        {% endfor %}
      </select>   
-   </div>
-   <div class="col-xs-2">
+    </td>
+    <td>
      <label for="profile" style="font-size:16px;">Profile Version</label>
      <input class="form-control" name="version" id="version" type="text">
-   </div>  
-   <div class="col-xs-2">
+    </td>
+    <td>
      <label for="sourcesystem" style="font-size:16px;">Source System</label>
-     <input class="form-control" name="sourcesystem"  id="sourcesystem" type="text">
-   </div>
-
-   <div class="col-xs-6">
+     <select class="form-control" name="sourcesystem" id="sourcesystem">
+       <option>ALL</option>
+	   {% for sourcesystem in sourcesystems %}
+       <option>{{ sourcesystem.source_system_code|safe }}</option> 
+       {% endfor %}
+     </select>   
+    </td>
+    <td style="vertical-align:middle;"> 
      <button type="submit" class="btn btn-primary" name="search-form" >Search</button>
+
      {% if g.user.is_authenticated %}
      <input TYPE="button" class="btn btn-primary" VALUE="Add New Profile"
         onclick="window.location.href='/profileadd';">
-     {% endif %}        
+     {% endif %}  
+ 
      <input TYPE="button" class="btn btn-primary" VALUE="Scheduled Jobs"
         onclick="window.location.href='/schedulelist';"> 
-   </div>
-  </div>
+    
+    </td>     
+  </tr>
+</table>
 </form>  
 
        
@@ -57,7 +66,11 @@
            {% if g.user.is_authenticated and profile.server_path %}
            <input TYPE="button" class="btn btn-primary btn-xs" VALUE="Run InitSync" onclick="window.location.href='/run/{{ profile.id|safe }}';"> 
            <input TYPE="button" class="btn btn-primary btn-xs" VALUE="Schedule" onclick="window.location.href='/profileschedulelist/{{ profile.id }}';">
-           {% else %}&nbsp;{% endif %}</td> 
+           {% else %}&nbsp;{% endif %}
+           {% if g.user.is_authenticated and profile.source_database_type |trim|upper == 'ORACLE' %}
+           <input TYPE="button" class="btn btn-primary btn-xs" VALUE="Enable CDC" onclick="window.location.href='/runenablecdc/{{ profile.id|safe }}';"> 
+           {% endif %}
+           </td>
            <td><a href="/profileupdate/{{ profile.id|safe }}">{{ profile.profile_name|safe }}</a></td> 
            <td>{{ profile.version|safe }}</td> 
            <td>{{ profile.source_system_code|safe }}</td> 

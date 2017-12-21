@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:    const
 # Purpose:   Collection of global constants
@@ -29,6 +12,8 @@ INITSYNC = 'InitSync'
 INITSYNCEXTRACT = 'InitSyncExtract'
 INITSYNCAPPLY = 'InitSyncApply'
 INITSYNCTRUNC = 'InitSyncTrunc'
+INITSYNCDROP = 'InitSyncDrop'
+INITSYNCCREATE = 'InitSyncCreate'
 CSV = 'csv'
 TEXT = 'text'
 SRC = 'src'
@@ -44,7 +29,6 @@ JSON = 'json'
 GZ = 'gz'
 BZ2 = 'bz2'
 
-DELIMITER = '~'
 FIELD_DELIMITER = '\x02'
 KEYFIELD_DELIMITER = ','
 NO_KEYFIELD_STR = 'NOPK'
@@ -79,6 +63,7 @@ FORWARDSLASH = "/"
 BACKSLASH = "\\"
 PERCENT = "%"
 UNDERSCORE = '_'
+PIPE = '|'
 CHAR_CR = '\r'
 CHAR_LF = '\n'
 CHAR_CRLF = '\r\n'
@@ -94,6 +79,7 @@ FIELD_NAME = 'field_name'
 DATA_TYPE = 'data_type'
 PARAMS = 'params'
 CONSTRAINTS = 'constraints'
+KEYS = 'keys'
 
 # Operations
 ADD = 'ADD'
@@ -173,15 +159,17 @@ ALTER_NLS_DATE_FORMAT_COMMAND = sql
 sql = "ALTER SESSION SET NLS_TIMESTAMP_FORMAT = 'YYYY-MM-DD HH24:MI:SS'"
 ALTER_NLS_TIMESTAMP_FORMAT_COMMAND = sql
 
+TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
+
 # Initsync constants
 HEARTBEAT_PERIOD = 1000
 SOURCE = "source"
 TARGET = "target"
 
 # Data mapping config constants
+PASS = 'pass'
 DEFAULT = 'default'
 RULES = 'rules'
-TARGET = 'target'
 PRECISION = 'precision'
 PRECISION_START = 'start'
 PRECISION_END = 'end'
@@ -218,6 +206,7 @@ ASCII_RECORDSEPARATOR = 30
 # Metadata constants
 METADATA_INSERT_TS_COL = 'insert_timestamp_column'
 METADATA_UPDATE_TS_COL = 'update_timestamp_column'
+METADATA_IGNORED_COLS = 'ignored_columns'
 METADATA_CURRENT_TIME_SQL = '(SELECT CURRENT_TIMESTAMP)'
 
 # SSL Modes
@@ -236,6 +225,27 @@ SSLMODE_VERIFY_FULL = "verify-full"
 # Note: this assumes that the target db has these columns setup
 COLUMN_NAME_SPECIAL_CHARS = [FORWARDSLASH, BACKSLASH]
 SPECIAL_CHAR_REPLACEMENT = UNDERSCORE
+
+# External programs
+BCP = "bcp"
+GPLOAD = "gpload"
+
+# Reserved SQL words
+RESERVED_SQL_WORDS = [
+    "ALL",
+    "DATE",
+    "DEFAULT",
+    "DESC",
+    "FROM",
+    "GROUP",
+    "OFFSET",
+    "ON",
+    "SELECT",
+    "TO",
+    "USER",
+    "WINDOW",
+    "WHEN",
+]
 
 # Supported Oracle data types
 ORACLE_SUPPORTED_DATATYPES = [

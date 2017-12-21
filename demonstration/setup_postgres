@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# This script to be run on data_pipeline server
+cd /usr/local/data_pipeline/demonstration
+
+# Setup schema, tables for the postgres-audit DB
+export PGPASSWORD=password
+psql --host=db-postgres-audit --port=5432 --username=postgres --dbname=myaudit -f ./create_tables_audit.sql
+ 
+
+# Setup schema for the postgres-destination DB
+export PGPASSWORD=password
+psql --host=db-postgres-dest --port=5432 --username=postgres --dbname=mydestination -f ./create_tables_postgres_destination.sql
+ 
+

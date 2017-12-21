@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:    postgresdb
 # Purpose:   Wraps the native Postgres client, exposing required operations on
@@ -103,23 +86,30 @@ class PostgresDb(Db):
         self._logger.debug("Query execution complete")
         return query_results
 
-    def copy_expert(self, input_file, table_name, sep,
-                    null_string, column_list, quote_char, escape_char, size):
+    def copy_expert(self, input_file, table_name, sep, null_string,
+                    column_list, quote_char, escape_char, size, header):
+
+        column_list_str = const.EMPTY_STRING
+        if column_list:
+            column_list_str = "( {} )".format(const.COMMA.join(column_list))
 
         copy_command = """
-            COPY {table_name} ( {column_list} )
+            COPY {table_name} {column_list}
             FROM STDIN
             DELIMITER '{sep}' {text_or_csv}
             NULL '{null}'
             QUOTE '{quote}'
             ESCAPE '{escape}'
-        """.format(table_name=table_name,
-                   column_list=const.COMMA.join(column_list),
+            {header}
+        """.format(table_name=str(table_name),
+                   column_list=column_list_str,
                    sep=sep,
-                   text_or_csv='CSV',
+                   text_or_csv="CSV",
                    null=null_string,
                    quote=quote_char,
-                   escape=escape_char)
+                   escape=escape_char,
+                   header="HEADER" if header else const.EMPTY_STRING,
+           )
 
         self._logger.debug("Executing copy_expert({cmd}, size={s})"
                            .format(cmd=copy_command, s=size))

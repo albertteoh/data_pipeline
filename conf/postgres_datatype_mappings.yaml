@@ -1,9 +1,14 @@
 ---
 
+postgres: pass
+
+greenplum: pass
+
 oracle:
-    number: &number
-        default: 
-            target: numeric
+    # number
+    number: &oracle_number
+        target: numeric
+        keep_params: False
         rules:
             - target: smallint
               precision:
@@ -24,40 +29,123 @@ oracle:
               keep_params: False
 
     float:
-        << : *number
+        << : *oracle_number
     integer: 
-        << : *number
+        << : *oracle_number
     real: 
-        << : *number
+        << : *oracle_number
     double: 
-        << : *number
+        << : *oracle_number
 
-    char: &char
-        default: 
-            target: char
+    # Not applicable to Oracle but doesn't hurt to add in
+    bit:
+        target: smallint
+
+    # char
+    char: &oracle_char
+        target: char
     nchar:
-        << : *char 
+        << : *oracle_char 
 
-    varchar: &varchar
-        default:
-            target: varchar
+    # varchar
+    varchar: &oracle_varchar
+        target: varchar
     varchar2: 
-        << : *varchar 
+        << : *oracle_varchar 
     nvarchar2:
-        << : *varchar 
+        << : *oracle_varchar 
+    # Not applicable to Oracle but doesn't hurt to add in
+    text:
+        << : *oracle_varchar 
+
+    # text
+    clob: &oracle_text
+        target: text
+        keep_params: False
+
+    # date
+    date:
+        target: date
+
+    # time
+    time:
+        target: time
+
+    # timestamp
+    timestamp: &oracle_timestamp
+        target: timestamp
+        keep_params: False
+    timestamp(6):
+        << : *oracle_timestamp 
+
+    # bytea
+    raw:
+        target: bytea
+
+
+mssql:
+    # numeric
+    numeric: &mssql_numeric
+        target: numeric
+    decimal:
+        << : *mssql_numeric
+    money:
+        << : *mssql_numeric
+    real: 
+        << : *mssql_numeric
+
+    # bigint
+    bigint: &mssql_bigint
+        target: bigint
+        keep_params: False
+    uniqueidentifier:
+        << : *mssql_bigint
+    int:
+        << : *mssql_bigint
+    double:
+        << : *mssql_bigint
+    
+    # smallint
+    smallint: &mssql_smallint
+        target: smallint
+        keep_params: False
+    tinyint:
+        << : *mssql_smallint
+    bit:
+        << : *mssql_smallint
+
+    # float
+    float:
+        target: float
+
+    # char
+    char: &mssql_char
+        target: char
+    nchar:
+        << : *mssql_char 
+
+    # varchar
+    varchar: &mssql_varchar
+        target: varchar
+    nvarchar:
+        << : *mssql_varchar 
+
+    # text
+    text: &mssql_text
+        target: text
+    ntext:
+        << : *mssql_text
+    xml:
+        << : *mssql_text
 
     date:
-        default:
-            target: date
+        target: date
 
     time:
-        default:
-            target: time
+        target: time
 
-    timestamp: 
-        default:
-            target: timestamp
+    datetime: &mssql_timestamp
+        target: timestamp
+    smalldatetime:
+        << : *mssql_timestamp
 
-    raw:
-        default:
-            target: bytea

@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:  cdc_extractor
 # Purpose: Extracts CDC records from a data source
@@ -88,20 +71,24 @@ class CdcExtractor(Extractor):
         return self._end_lsn
 
     def _get_cdc_query_range(self):
-        (prev_min_cdc_point, prev_max_cdc_point) = get_prev_run_cdcs(
-            self._audit_conn_details, self._argv)
-
-        self._pc.min_lsn = prev_min_cdc_point
-        self._pc.max_lsn = prev_max_cdc_point
-
         if self._argv.startscn:
             self._logger.info(
-                "Overriding computed minscn ({minscn}) with "
-                "supplied startscn ({startscn})"
-                .format(minscn=prev_max_cdc_point,
-                        startscn=self._argv.startscn))
-
+                "Setting startscn to ({startscn})"
+                .format(startscn=self._argv.startscn)
+            )
             prev_max_cdc_point = self._argv.startscn
+        else:
+            result = get_prev_run_cdcs(self._audit_conn_details, self._argv)
+            if not result:
+                raise Exception(
+                    "No prior InitSync or CDCExtract run detected. "
+                    "Unable to determine which SCN to to start at. Consider "
+                    "setting the startscn configuration option."
+                )
+            (prev_min_cdc_point, prev_max_cdc_point) = result
+
+        self._pc.min_lsn = prev_max_cdc_point
+        self._pc.max_lsn = prev_max_cdc_point
 
         (min_cdc_point, max_cdc_point) = self.get_source_minmax_cdc_point(
             prev_max_cdc_point)

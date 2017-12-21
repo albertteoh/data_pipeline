@@ -1,0 +1,6 @@
+#!/bin/bash
+
+YAML_FILE=./demonstration/${1}
+
+cd /usr/local/data_pipeline/
+python -m data_pipeline.initsync_pipe --config ${YAML_FILE}

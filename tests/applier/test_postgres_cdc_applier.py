@@ -1,31 +1,16 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 import confluent_kafka
 import importlib
 import pytest
 import json
 import smtplib
-import data_pipeline.constants.const as const
 import cdc_applier_test_utils as cdc_utils
+import data_pipeline.applier.factory as applier_factory
+import data_pipeline.constants.const as const
 
 from pytest_mock import mocker
 from data_pipeline.stream.oracle_message import OracleMessage
 from data_pipeline.applier.postgres_cdc_applier import PostgresCdcApplier
+from data_pipeline.sql.builder.postgres_sql_builder import PostgresSqlBuilder
 from data_pipeline.db.db import Db
 
 
@@ -57,7 +42,10 @@ def setup(tmpdir, mocker):
      mock_audit_factory,
      mock_audit_db) = cdc_utils.setup_dependencies(tmpdir, mocker, None, None, None)
 
-    yield(PostgresCdcApplier(oracle_processor, mock_target_db, mockargv, mock_audit_factory), mock_target_db, mock_audit_db)
+    mock_target_db.dbtype = const.POSTGRES
+    pg_applier = applier_factory.build(oracle_processor, mock_target_db, mockargv, mock_audit_factory)
+
+    yield(pg_applier, mock_target_db, mock_audit_db, mockargv)
 
 
 @pytest.fixture()
@@ -78,14 +66,17 @@ def setup_commit_point_tests(tmpdir, mocker):
     end_batch_mock.return_value = True
 
     can_apply_mock = mocker.patch.object(PostgresCdcApplier, '_can_apply')
-    can_apply_mock.return_valule = True
+    can_apply_mock.return_value = True
 
     oracle_message = OracleMessage()
     config = {'value.return_value': oracle_message.serialise(),
               'offset.return_value': 1}
     mock_message = mocker.Mock(**config)
 
-    yield(PostgresCdcApplier(oracle_processor, mock_target_db, mockargv, mock_audit_factory), mock_target_db, mock_message, mock_audit_db)
+    mock_target_db.dbtype = const.POSTGRES
+    pg_applier = applier_factory.build(oracle_processor, mock_target_db, mockargv, mock_audit_factory)
+
+    yield(pg_applier, mock_target_db, mock_message, mock_audit_db)
 
 
 @pytest.fixture()
@@ -97,7 +88,10 @@ def setup_metacols(tmpdir, mocker):
      mock_audit_factory,
      mock_audit_db) = cdc_utils.setup_dependencies(tmpdir, mocker, metacols, None, None)
 
-    yield(PostgresCdcApplier(oracle_processor, mock_target_db, mockargv, mock_audit_factory), mock_target_db, mock_audit_db)
+    mock_target_db.dbtype = const.POSTGRES
+    pg_applier = applier_factory.build(oracle_processor, mock_target_db, mockargv, mock_audit_factory)
+
+    yield(pg_applier, mock_target_db, mock_audit_db)
 
 
 @pytest.fixture()
@@ -109,7 +103,10 @@ def setup_skipbatch(tmpdir, mocker):
      mock_audit_factory,
      mock_audit_db) = cdc_utils.setup_dependencies(tmpdir, mocker, None, None, skip_batch_config)
 
-    yield(PostgresCdcApplier(oracle_processor, mock_target_db, mockargv, mock_audit_factory), mock_target_db, mock_audit_db)
+    mock_target_db.dbtype = const.POSTGRES
+    pg_applier = applier_factory.build(oracle_processor, mock_target_db, mockargv, mock_audit_factory)
+
+    yield(pg_applier, mock_target_db, mock_audit_db)
 
 
 @pytest.fixture()
@@ -121,7 +118,10 @@ def setup_bulkapply(tmpdir, mocker):
      mock_audit_factory,
      mock_audit_db) = cdc_utils.setup_dependencies(tmpdir, mocker, None, None, bulk_apply_config)
 
-    yield(PostgresCdcApplier(oracle_processor, mock_target_db, mockargv, mock_audit_factory), mock_target_db, mock_audit_db)
+    mock_target_db.dbtype = const.POSTGRES
+    pg_applier = applier_factory.build(oracle_processor, mock_target_db, mockargv, mock_audit_factory)
+
+    yield(pg_applier, mock_target_db, mock_audit_db)
 
 
 @pytest.fixture()
@@ -134,7 +134,10 @@ def setup_inactive_applied_tables(tmpdir, mocker):
      mock_audit_factory,
      mock_audit_db) = cdc_utils.setup_dependencies(tmpdir, mocker, None, inactive_applied_tables, None)
 
-    yield(PostgresCdcApplier(oracle_processor, mock_target_db, mockargv, mock_audit_factory), mock_target_db, mock_audit_db)
+    mock_target_db.dbtype = const.POSTGRES
+    pg_applier = applier_factory.build(oracle_processor, mock_target_db, mockargv, mock_audit_factory)
+
+    yield(pg_applier, mock_target_db, mock_audit_db)
 
 
 # Target commit should only be run during a batch, not after a batch is ended
@@ -158,7 +161,7 @@ def test_target_commit_at_eob(mocker, setup_commit_point_tests):
 
 
 def test_apply(data_postgres_cdc_applier, mocker, setup):
-    (postgres_applier, mock_target_db, mock_audit_db) = setup
+    (postgres_applier, mock_target_db, mock_audit_db, mockargv) = setup
     cdc_utils.execute_tests(postgres_applier, data_postgres_cdc_applier, mocker, mock_target_db, mock_audit_db)
 
 
@@ -168,7 +171,7 @@ def test_bulkapply(data_postgres_cdc_applier_bulkapply, mocker, setup_bulkapply)
 
 
 def test_apply_batch_state(data_postgres_cdc_applier_batch_state, mocker, setup):
-    (postgres_applier, mock_target_db, mock_audit_db) = setup
+    (postgres_applier, mock_target_db, mock_audit_db, mockargv) = setup
     cdc_utils.execute_batch_state_tests(postgres_applier, data_postgres_cdc_applier_batch_state, mocker, mock_target_db)
 
 
@@ -188,7 +191,7 @@ def test_apply_metacols(data_postgres_cdc_applier_metacols, mocker, setup_metaco
 
 
 def test_end_of_batch_without_start(mocker, setup):
-    (postgres_applier, mock_target_db, mock_audit_db) = setup
+    (postgres_applier, mock_target_db, mock_audit_db, mockargv) = setup
 
     oracle_message = OracleMessage()
     oracle_message.record_type = const.END_OF_BATCH
@@ -198,7 +201,7 @@ def test_end_of_batch_without_start(mocker, setup):
 
 
 def test_null_message_lsn(mocker, setup):
-    (postgres_applier, mock_target_db, mock_audit_db) = setup
+    (postgres_applier, mock_target_db, mock_audit_db, mockargv) = setup
     postgres_applier._maxlsns_per_table['ctl.mytable'] = '1'
 
     oracle_message = OracleMessage()
@@ -208,7 +211,7 @@ def test_null_message_lsn(mocker, setup):
 
 
 def test_null_max_lsn_in_ssp(mocker, setup):
-    (postgres_applier, mock_target_db, mock_audit_db) = setup
+    (postgres_applier, mock_target_db, mock_audit_db, mockargv) = setup
     postgres_applier._maxlsns_per_table['ctl.mytable'] = ''
 
     oracle_message = OracleMessage()
@@ -230,7 +233,7 @@ def test_default_next_offset_to_read(tmpdir, mocker):
 
     def execute_query_se(sql, arraysize, bind_variables):
         print("Query executed: {}".format(sql))
-        if "SELECT executor_run_id, executor_status, status" in sql:
+        if "SELECT applier_marker, status" in sql:
             mock_query_results_config = {
                 'fetchone.return_value': None
             }
@@ -244,11 +247,37 @@ def test_default_next_offset_to_read(tmpdir, mocker):
     mock_db_factory = mocker.patch("data_pipeline.audit.factory.db_factory")
     mock_db_factory.build.return_value = mock_db
 
-    postgres_applier = PostgresCdcApplier(oracle_processor, mock_target_db, mockargv, mock_audit_factory)
+    mock_target_db.dbtype = const.POSTGRES
+    pg_applier = applier_factory.build(oracle_processor, mock_target_db, mockargv, mock_audit_factory)
 
-    offset = postgres_applier.next_offset_to_read
+    offset = pg_applier.next_offset_to_read
     assert offset != confluent_kafka.OFFSET_END
     assert offset is None
+
+
+@pytest.mark.parametrize("notifysummarylist, notifyerrorlist, expected_mailing_list", [
+    (["a@mail.com"], [], set(["a@mail.com"])),
+    ([], ["a@mail.com"], set(["a@mail.com"])),
+    (["a@mail.com"], ["b@mail.com"], set(["a@mail.com", "b@mail.com"])),
+])
+def test_report_error(notifysummarylist, notifyerrorlist, expected_mailing_list, mocker, setup):
+    (postgres_applier, mock_target_db, mock_audit_db, mockargv) = setup
+
+    mockargv.notifyerrorlist = notifyerrorlist
+    mockargv.notifysummarylist = notifysummarylist
+
+    error_message = "Oops"
+    mailer_mock = mocker.patch('data_pipeline.applier.applier.mailer')
+
+    postgres_applier.report_error(error_message)
+    mailer_mock.send.assert_called_once_with(
+        'someone',
+        expected_mailing_list,
+        'myprofile applier has failed. Partial batch (up to error) committed.',
+        'localhost',
+        plain_text_message='Error: Oops\n***STATE DUMP***\n\nLast executed state: {}\n\nLast committed state: None\n\nCurrent message: None\n\n'
+    )
+
    
 @pytest.mark.skip(reason="Performance testing")
 def test_sqlalchemy_update_perf(mocker):
@@ -258,7 +287,7 @@ def test_sqlalchemy_update_perf(mocker):
 
     def update_pc(mocker):
         mockargv_config = {
-                'audituser': 'test/test1234@10.10.10.10:5432/dbname', 
+                'audituser': 'test/test1234@13.54.63.57:5432/iag', 
                 'sourcedbtype': 'oracle',
                 'sourceschema': 'ctl',
                 'profileversion': '1',
@@ -284,7 +313,7 @@ def test_plainsql_update_perf(mocker):
     from timeit import Timer
 
     def update_pc():
-        conn = psycopg2.connect(database="dbname",user="test",password='test1234',host='10.10.10.10',port='5432')
+        conn = psycopg2.connect(database="iag",user="test",password='test1234',host='13.54.63.57',port='5432')
         cursor = conn.cursor()
 
         print("inserting")

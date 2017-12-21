@@ -24,14 +24,18 @@
 <form class="form-inline" action"." method="POST">
   
   <div class="form-group">
-
       <input type="button" class="btn btn-primary" value="Previous" onclick="goBack()">
       <button type="submit" class="btn btn-primary" id="search-form" name="search-form" >Next</button>
- 
-  <table class="table table-striped">
+   </div>
+  <div class="form-group">   
+      <input type="text" id="myInput" onkeyup="myFunction()" placeholder="Search for object names..">
+  </div>
+  <table class="table table-striped" id="myTable">
     <thead>
       <tr>
-        <th>&nbsp;</th>
+        <th>
+           <input type="checkbox" class="check" id="checkAll">
+        </th>
         <th>Schema</th>
         <th>Object</th>
       </tr>
@@ -40,7 +44,7 @@
 	{% for object in objects %}
         <tr>
           <td><div class="checkbox">       
-              <label><input type="checkbox" name="{{ object[0]}}|{{ object[1]|trim }}" value="Y"></label></div>
+              <label><input type="checkbox" class="check" name="{{ object[0]}}|{{ object[1]|trim }}" value="Y"></label></div>
           </td>
           <td>{{object[0]|safe}}</td>
           <td>{{object[1]|safe|trim}}</td>
@@ -50,6 +54,36 @@
   </table>
 
   
-  </form>  
+</form>  
+
+<script>
+  $("#checkAll").click(function () {
+    $(".check:visible").prop('checked', $(this).prop('checked'));
+});
+</script>
   
+<script>
+function myFunction() {
+  // Declare variables 
+  var input, filter, table, tr, td, i;
+  input = document.getElementById("myInput");
+  filter = input.value.toUpperCase();
+  table = document.getElementById("myTable");
+  tr = table.getElementsByTagName("tr");
+
+  // Loop through all table rows, and hide those who don't match the search query
+  for (i = 0; i < tr.length; i++) {
+    td = tr[i].getElementsByTagName("td")[2];
+    if (td) {
+      if (td.innerHTML.toUpperCase().indexOf(filter) > -1) {
+        tr[i].style.display = "";
+      } else {
+        tr[i].style.display = "none";
+      }
+    } 
+  }
+}
+</script>
+
+
 {% endblock %}

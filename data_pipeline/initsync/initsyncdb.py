@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:    initsync_db
 # Purpose:   Contains database endpoint specific functions for initsync
@@ -24,7 +7,9 @@
 #
 ###############################################################################
 
-from abc import ABCMeta, abstractmethod
+import data_pipeline.constants.const as const
+
+from abc import ABCMeta, abstractmethod, abstractproperty
 
 
 class InitSyncDb(object):
@@ -34,18 +19,38 @@ class InitSyncDb(object):
         self._argv = argv
         self._db = db
         self._logger = logger
+        self._ignored_columns = None
+        if self._argv.metacols:
+            self._ignored_columns = self._argv.metacols.get(
+                const.METADATA_IGNORED_COLS)
+
+    @property
+    def dbtype(self):
+        return self._db.dbtype
 
     @property
     def encoding(self):
         return self._db.encoding
 
     @abstractmethod
-    def get_source_column_list(self, table):
+    def query_columns(self, table, lowercase):
         pass
 
     @abstractmethod
-    def get_target_column_list(self, table):
+    def get_decorated_source_column_list(self, query_result):
         pass
+
+    @abstractmethod
+    def get_decorated_target_column_list(self, query_result):
+        pass
+
+    def _get_colnames_from_column_list(self, column_list):
+        """Gets the "column names" from the column_list
+        The column_list is a list of dictionaries containing the column name,
+        column data type, and any associated parameters to the data type such
+        as size (for varchar) or scale and precision (for numeric types).
+        """
+        return [r[const.FIELD_NAME] for r in column_list]
 
     @abstractmethod
     def table_exists(self, table):
@@ -69,10 +74,14 @@ class InitSyncDb(object):
     def truncate(self, table):
         pass
 
+    @abstractmethod
+    def drop(self, table, cascade):
+        pass
+
     def extract_data(self, column_list, table, query_condition, log_function):
         self._pre_extract()
 
-        extract_data_sql = self._build_extract_data_sql(
+        extract_data_sql = self.build_extract_data_sql(
             column_list, table, self._argv.extractlsn, self._argv.samplerows,
             self._argv.lock, query_condition)
 
@@ -91,16 +100,13 @@ class InitSyncDb(object):
 
     @abstractmethod
     def _post_extract(self, record):
-        """This will be run on a per-record basis to modify
-        data at runtime as necessary"""
+        """This will be run on a per-record basis to modify data at runtime
+        as necessary to allow for any custom data manipulation"""
         pass
 
     @abstractmethod
-    def _build_extract_data_sql(self, column_list, table, samplerows, lock):
-        pass
-
-    @abstractmethod
-    def execute_post_processing(self, target_table):
+    def build_extract_data_sql(self, column_list, table, extractlsn,
+                               samplerows, lock, query_condition):
         pass
 
     def close(self):

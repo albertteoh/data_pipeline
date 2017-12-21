@@ -1,26 +1,12 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 from sqlalchemy import create_engine
 from sqlalchemy import Boolean, Column, String, Integer, DateTime, Numeric, Text, Sequence, BigInteger, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-db_string = "postgres://myuser:mypassword@10.10.10.10:6432/dbname"
+#db_string = "postgres://testuser:pa55word@localhost:5432/testdb"
+#db_string ="postgres://test:test1234@13.54.63.57:5432/iag"
+#db_string ="postgres://test:test1234@13.54.17.118:5433/iag"
+db_string = "postgres://sys_datapipeline:datapipeline_P0stgr35@10.137.206.165:6432/edhpreprod"
 
 db = create_engine(db_string)
 Base = declarative_base()
@@ -35,10 +21,10 @@ class ProcessControl(Base):
     process_name = Column(String(30))
     source_system_code = Column(String(30))
     source_system_type = Column(String(10))
-    source_region = Column(String(30))
+    source_region = Column(String(256))
     target_system = Column(String(30))
     target_system_type = Column(String(10))
-    target_region = Column(String(30))
+    target_region = Column(String(256))
     process_starttime = Column(DateTime)
     process_endtime = Column(DateTime)
     min_lsn = Column(String(30))
@@ -53,12 +39,12 @@ class ProcessControl(Base):
     filename = Column(String(1024))
     infolog = Column(String(1024))
     errorlog = Column(String(1024))
-    executor_run_id = Column(BigInteger)
+    applier_marker = Column(BigInteger)
     executor_status = Column(String(10))
     executor_logs = Column(Integer)
     archive_logs = Column(Integer)          
     object_list = Column(Text)
-
+      
 class ProcessControlDetail(Base):
     __tablename__ = 'process_control_detail'
 
@@ -89,7 +75,7 @@ class ProcessControlDetail(Base):
     errorlog = Column(String(1024))
     infolog = Column(String(1024))
     duration = Column(Numeric(precision=20, scale=4))
-        
+           
 class SourceSystemProfile(Base):
     __tablename__ = 'source_system_profile'
  
@@ -97,8 +83,8 @@ class SourceSystemProfile(Base):
     profile_name = Column(String(20))
     version = Column(Integer)
     source_system_code = Column(String(30))
-    source_region = Column(String(30))
-    target_region = Column(String(30))
+    source_region = Column(String(256))
+    target_region = Column(String(256))
     object_name = Column(String(50))
     object_seq = Column(BigInteger)
     min_lsn = Column(String(30))
@@ -115,7 +101,7 @@ class SourceSystemProfile(Base):
     last_history_update = Column(DateTime)
     notes = Column(String(4000))
     query_condition = Column(String(4000))
- 
+
 class Connections(Base):
     __tablename__ = 'connections'
  
@@ -141,7 +127,7 @@ class ProcessParameters(Base):
     parameter_name = Column(String(80))
     parameter_type = Column(String(10))
     parameter_value = Column(String(300))
-   
+ 
 class ReferenceData(Base):
     __tablename__ = 'reference_data'
  
@@ -151,7 +137,7 @@ class ReferenceData(Base):
     description = Column(String(1000))
     active_ind = Column(String(1))
     order_seq = Column(Integer)
-            
+     
 class User(Base):
     __tablename__ = "users"
     id = Column('user_id',Integer , primary_key=True)
@@ -162,7 +148,7 @@ class User(Base):
     email = Column('email',String(50),unique=True , index=True)
     role = Column('role' , String(10))
     registered_on = Column('registered_on' , DateTime)
-       
+
 class Profile(Base):
     __tablename__ = 'profile'
  
@@ -180,8 +166,6 @@ class Profile(Base):
     description = Column(String(1000))
     active_ind = Column(String(1))    
     server_path = Column(String(4000))
-    
-    
     
 Session = sessionmaker(db)
 session = Session()

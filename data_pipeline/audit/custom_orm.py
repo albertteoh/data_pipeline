@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ###############################################################################
 # Module:   custom_orm
 # Purpose:  Module containing object relational models for audit tables
@@ -37,7 +20,7 @@ import data_pipeline.utils.dbuser as dbuser
 
 from abc import ABCMeta, abstractmethod
 from data_pipeline.utils.utils import dump
-from data_pipeline.sql.utils import TableName
+from data_pipeline.sql.table_name import TableName
 
 
 def _add_connection_resiliency(func):
@@ -306,11 +289,8 @@ class ProcessControl(ProcessControlBase):
         self.filename = "{}".format(self.argv.outputfile)
         self._fieldnames.append('filename')
 
-        self.executor_run_id = 0
-        self._fieldnames.append('executor_run_id')
-
-        self.executor_status = const.EMPTY_STRING
-        self._fieldnames.append('executor_status')
+        self.applier_marker = 0
+        self._fieldnames.append('applier_marker')
 
         self.source_system_code = self.argv.profilename
         self._fieldnames.append('source_system_code')

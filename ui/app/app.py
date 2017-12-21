@@ -1,20 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-# 
-#   http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-# 
 ##################################################################################
 # Module:    app.py
 # Purpose:   Flask main UI logic
@@ -97,32 +80,40 @@ def login():
         next =  request.args.get('next')
  
         return redirect(next or url_for('main'))
-       
+
+    g.menubar_selected_item = "login"       
     return render_template('login.html', form = form)
 
 @app.route('/logout')
 def logout():
     logout_user()
     return redirect(url_for('login'))
-     
+
+# HOME
+   
 @app.route("/")
 def main():
-
 
     initsync_processes = session.query(ProcessControl.id, ProcessControl.profile_name, ProcessControl.profile_version, ProcessControl.process_code, ProcessControl.status, ProcessControl.total_count, ProcessControl.duration, ProcessControl.process_starttime, ProcessControl.process_endtime, func.count(ProcessControlDetail.id).label('total')).filter(ProcessControlDetail.comment.like('%Finished%')).filter(ProcessControl.process_code == 'InitSync').join(ProcessControlDetail).group_by(ProcessControl.id).order_by(ProcessControl.id.desc())
 
     cdc_processes = session.query(ProcessControl.id, ProcessControl.profile_name, ProcessControl.profile_version, ProcessControl.process_code, ProcessControl.status, ProcessControl.total_count, ProcessControl.duration, ProcessControl.process_starttime, ProcessControl.process_endtime, func.sum(ProcessControlDetail.source_row_count).label('total')).filter(ProcessControl.process_code != 'InitSync').join(ProcessControlDetail).group_by(ProcessControl.id).order_by(ProcessControl.id.desc())
     
+    g.menubar_selected_item = "home"
     # pass the list of process control table entries to html
     return render_template('index.html', cdc_processes = cdc_processes,initsync_processes = initsync_processes )
        
-       
+# Process List
+     
 @app.route("/processlist", methods=['GET','POST'])
 def processlist():
 
     q = session.query(ProcessControl)
     processControl = q.order_by(ProcessControl.id.desc())
     
+    profileNames = session.query(ProcessControl.profile_name, ProcessControl.profile_version).distinct(ProcessControl.profile_name, ProcessControl.profile_version).order_by(ProcessControl.profile_name, ProcessControl.profile_version)
+    
+    sourcesystems = session.query(ProcessControl.source_system_code).distinct(ProcessControl.source_system_code).order_by(ProcessControl.source_system_code)
+
     if request.method == 'POST' :
 
         # apply filters
@@ -131,21 +122,26 @@ def processlist():
         filter_status = request.form['status']
         
         if filter_profile:
-           q = q.filter(ProcessControl.profile_name==filter_profile)       
+           if filter_profile != 'ALL':
+               profile_name,profile_version = filter_profile.split("-")
+               q = q.filter(ProcessControl.profile_name==profile_name,ProcessControl.profile_version==profile_version )       
      
         if filter_status:
            if filter_status != 'ALL':
               q = q.filter(ProcessControl.status==filter_status)    
 
         if filter_sourcesystem:
-           q = q.filter(ProcessControl.source_system_code==filter_sourcesystem)    
+           if filter_sourcesystem != 'ALL':
+             q = q.filter(ProcessControl.source_system_code==filter_sourcesystem)    
            
         processControl = q.order_by(ProcessControl.id.desc())
 
+    g.menubar_selected_item = "processes"
     # pass the list of process control table entries to html
-    return render_template('process_control_list.html', processControl = processControl)
+    return render_template('process_control_list.html', processControl = processControl, profileNames = profileNames, sourcesystems = sourcesystems)
     
-    
+# Process Details List
+   
 @app.route("/processdetails/<process_id>/", methods=['GET','POST'])
 def processdetails(process_id):
 
@@ -157,8 +153,17 @@ def processdetails(process_id):
         process = 'No details found!'
 
     if request.method == 'POST':
+    
+        # apply filters
+        filter_object_name = request.form['object_name']
+           
+        
         # get the order by field name from select list
         order_by = request.form['order_by']
+
+        if filter_object_name:
+           processControlDetail = processControlDetail.filter(ProcessControlDetail.object_name.like(filter_object_name+'%'))    
+        
         # default order is by object name
         if order_by == 'status':
            processControlDetail = processControlDetail.order_by(ProcessControlDetail.status)
@@ -166,8 +171,12 @@ def processdetails(process_id):
            processControlDetail = processControlDetail.order_by(ProcessControlDetail.process_starttime)
     else:
         processControlDetail = processControlDetail.order_by(ProcessControlDetail.object_name, ProcessControlDetail.process_code.desc())
+
+    g.menubar_selected_item = "processes"
     # pass the list of process control  detail table entries to html
     return render_template('process_control_details.html', processControlDetail = processControlDetail, runid = process_id, process = process)
+
+# Profiles List
 
 @app.route("/profilelist", methods=['GET','POST'])
 def profilelist():
@@ -175,7 +184,9 @@ def profilelist():
 
     profiles = session.query(Profile).order_by(Profile.profile_name, Profile.version)
 
-    names = session.query(Profile).distinct(Profile.profile_name).order_by(Profile.profile_name)
+    names = session.query(Profile.profile_name).distinct(Profile.profile_name).order_by(Profile.profile_name)
+
+    sourcesystems = session.query(Profile.source_system_code).distinct(Profile.source_system_code).order_by(Profile.source_system_code)
            
     if request.method == 'POST' :
  
@@ -186,17 +197,18 @@ def profilelist():
     
         if filter_profile:
            if filter_profile != 'ALL':
-             profiles = profiles.filter(Profile.profile_name==filter_profile)       
-     
-        if filter_version:
-           profiles = profiles.filter(Profile.version==filter_version)    
+             profiles = profiles.filter(Profile.profile_name==filter_profile)         
 
         if filter_sourcesystem:
-           profiles = profiles.filter(Profile.source_system_code==filter_sourcesystem)          
-    
-    # pass the list of source system profile table entries to html
-    return render_template('profile_list.html', profiles = profiles, names = names)
+           if filter_sourcesystem != 'ALL':
+             profiles = profiles.filter(Profile.source_system_code==filter_sourcesystem)                
 
+    g.menubar_selected_item = "profiles"    
+    # pass the list of source system profile table entries to html
+    return render_template('profile_list.html', profiles = profiles, names = names, sourcesystems = sourcesystems)
+
+# Add a new Profile WIZARD
+# Step 1 - General properties
 
 @app.route("/profileadd", methods=['GET','POST'])
 @login_required
@@ -209,6 +221,9 @@ def profileadd():
     form = ProfileHeaderForm(request.form, obj=profile)
 
     form.source_connection.query = session.query(Connections.connection_name).order_by(Connections.connection_name)
+    
+    form.target_connection.query = session.query(Connections.connection_name).order_by(Connections.connection_name)
+    
     if request.method == 'POST' and form.validate_on_submit():
        
         # The request is POST
@@ -233,9 +248,10 @@ def profileadd():
            
         # go to select schema page
         return redirect(url_for('schemalist',profile_id=profile.id))
-       
+      
+    g.menubar_selected_item = "profiles" 
     return render_template('profile_add.html', form = form)
-    
+  
 @app.route("/profileupdate/<profile_id>/", methods=['GET','POST'])
 def profileupdate(profile_id):
       
@@ -244,6 +260,8 @@ def profileupdate(profile_id):
     form = ProfileHeaderForm(request.form, obj=profile)
     
     form.source_connection.query = session.query(Connections.connection_name).order_by(Connections.connection_name)
+    
+    form.target_connection.query = session.query(Connections.connection_name).order_by(Connections.connection_name)
    
     if request.method == 'POST' and form.validate_on_submit():
 
@@ -256,7 +274,8 @@ def profileupdate(profile_id):
         session.commit()
         
         return redirect(url_for('profilelist'))
-    
+   
+    g.menubar_selected_item = "profiles" 
     # The request is GET    
     return render_template('profile_update.html', form = form)
     
@@ -266,7 +285,8 @@ def profileobjects(profile_name,version):
     profile_header = session.query(Profile).filter(Profile.profile_name == profile_name, Profile.version == version ).first()
     
     profile_details = session.query(SourceSystemProfile).filter(SourceSystemProfile.profile_name == profile_name, SourceSystemProfile.version == version ).order_by(SourceSystemProfile.object_seq)
- 
+
+    g.menubar_selected_item = "profiles" 
     # pass the list of process control  detail table entries to html
     return render_template('profile_objects_list.html', profile_details = profile_details, profile_header = profile_header)
 
@@ -287,7 +307,8 @@ def profileitemupdate(profile_id):
         session.commit()
         
         return redirect(url_for('profileobjects',profile_name=profile.profile_name,version=profile.version))
-    
+   
+    g.menubar_selected_item = "profiles" 
     # The request is GET    
     return render_template('profile_item_update.html', form = form, profile = profile)
      
@@ -305,7 +326,8 @@ def profileitemdelete(profile_id):
         session.commit()
         
         return redirect(url_for('profileobjects',profile_name=profile.profile_name,version=profile.version))
-    
+   
+    g.menubar_selected_item = "profiles" 
     # The request is GET    
     return render_template('profile_item_delete.html', profile = profile)
      
@@ -355,7 +377,8 @@ def profileitemadd(profile_name,version):
         return redirect(url_for('profileobjects',profile_name=profile.profile_name,version=profile.version))    
     
     # The request is GET  
-   
+  
+    g.menubar_selected_item = "profiles" 
     return render_template('profile_item_add.html', form = form, profile=profile)    
     
 @app.route("/connections",  methods=['GET','POST'])
@@ -378,7 +401,7 @@ def connections():
            if filter_database != 'ALL':
                connections = connections.filter(Connections.database_type==filter_database)    
 
-    
+    g.menubar_selected_item = "connections"    
     # pass the list of connection table entries to html
     return render_template('connections_list.html', connections = connections)
 
@@ -412,7 +435,8 @@ def addconnection():
         
         # go back to Connections List view page
         return redirect(url_for('connections'))
-       
+      
+    g.menubar_selected_item = "connections" 
     return render_template('connections_add.html', form = form)
 
 
@@ -435,7 +459,8 @@ def updateconnection(connection_id):
         session.commit()
         
         return redirect(url_for('connections'))
-    
+   
+    g.menubar_selected_item = "connections" 
     # The request is GET    
     return render_template('connections_update.html', form = form, connection = connection)
  
@@ -473,7 +498,8 @@ def browseconnection(connection_name):
              #query = "SELECT table_name from ALL_TABLES WHERE owner ='" + filter_schema_name + "'"             
              object_query = _db_objects_query(connection.database_type.lower(),filter_schema_name)
              objects = conn_objects.execute_query(object_query, 1000 )
-          
+         
+    g.menubar_selected_item = "connections" 
     # pass the list of source system profile table entries to html
     return render_template('connections_browse.html', schemas = schemas, objects = objects)
         
@@ -495,6 +521,7 @@ def users():
            if filter_role != 'ALL':
               users = users.filter(User.role==filter_role)       
     
+    g.menubar_selected_item = "users" 
     # pass the list of connection table entries to html
     return render_template('users_list.html', users = users)
 
@@ -523,7 +550,8 @@ def adduser():
         
         # go back to Users List view page
         return redirect(url_for('users'))
-       
+    
+    g.menubar_selected_item = "users"   
     return render_template('users_add.html', form = form)
 
 
@@ -547,6 +575,7 @@ def updateuser(user_id):
         
         return redirect(url_for('users'))
     
+    g.menubar_selected_item = "users"
     # The request is GET    
     return render_template('users_update.html', form = form, user = user)
  
@@ -564,7 +593,8 @@ def parameters():
         if filter_type:
            if filter_type != 'ALL':
               parameters = parameters.filter(ProcessParameters.parameter_type==filter_type)       
-         
+
+    g.menubar_selected_item = "settings"         
     # pass the list of parameters from table entries to html
     return render_template('parameters_list.html', parameters = parameters)
 
@@ -595,6 +625,8 @@ def addparameter():
        
         # go back to Connections List view page
         return redirect(url_for('parameters'))
+
+    g.menubar_selected_item = "settings"
        
     return render_template('parameters_add.html', form = form)
 
@@ -617,7 +649,9 @@ def updateparameter(parameter_id):
         session.commit()
         
         return redirect(url_for('parameters'))
-    
+
+
+    g.menubar_selected_item = "settings"    
     # The request is GET    
     return render_template('parameters_update.html', form = form, parameter = parameter)
  
@@ -638,8 +672,6 @@ def viewfile(file_name):
     
     # pass the list of process control  detail table entries to html
     return render_template('view_file.html', file_contents = file_contents, file_name = file_name)
-  
-# TODO Follwong code is for demo purposes at the moment   
 
 @app.route("/schemalist/<profile_id>/", methods=['GET','POST'])
 def schemalist(profile_id):
@@ -801,11 +833,16 @@ def profileitemobjectlist(connection_name,schema_list,profile_id):
            
     if request.method == 'POST' :
         
-        # Find the next object_seq number
+        # Find the next object_seq number if there are already objects under this profile
         profile_details = session.query(SourceSystemProfile).filter(SourceSystemProfile.profile_name == profile.profile_name, SourceSystemProfile.version == profile.version ).order_by(SourceSystemProfile.object_seq.desc()).first()
         
-        next_object_seq = profile_details.object_seq + 1 
-        
+        if profile_details:
+            # objects found
+            next_object_seq = profile_details.object_seq + 1 
+        else:
+            # no objects are found, start sequence from one
+            next_object_seq = 1
+            
         # Process selected objects
         for object in objects:  
             # checkbox name is schema|tablename        
@@ -852,21 +889,6 @@ def profileitemobjectlist(connection_name,schema_list,profile_id):
     # pass the list of source system profile table entries to html
     return render_template('profile_item_object_list.html', objects = objects)
 
-@app.route("/charts")
-def charts():
-    legend = 'Monthly Data'
-    labels = ["January","February","March","April","May","June","July","August"]
-    values = [10,9,8,7,6,4,7,8]
-    colors = [ "#F7464A", "#46BFBD", "#FDB45C", "#FEDCBA","#ABCDEF", "#DDDDDD", "#ABCABC"  ]
-    return render_template('charts.html', values=values, labels=labels, colors=colors, legend=legend)
-
-@app.route("/files")
-def listfiles():
-
-    files = os.listdir("/tmp/files")
-
-    return render_template('list_files.html', files = files)
-
 @app.route("/run/<profile_id>")
 @login_required
 def runcommand(profile_id):
@@ -896,6 +918,41 @@ def runcommand(profile_id):
 
     return render_template('command_output.html', out = out)
 
+
+@app.route("/runenablecdc/<profile_id>/")
+@login_required
+def runenablecdc(profile_id):
+    
+    #return redirect(url_for('profilelist'))
+    
+    #TODO source_connection is not right. to be investigated, 
+    # by pass the code following for now
+    
+    profile = session.query(Profile).filter(Profile.id == profile_id).first()
+    print('id = %s conn = %s ' % (profile_id, profile.source_connection))
+    
+    profile_details = session.query(SourceSystemProfile).filter(SourceSystemProfile.profile_name == profile.profile_name, SourceSystemProfile.version == profile.version )
+    
+    connection = session.query(Connections).filter(Connections.connection_name == profile.source_connection).first()
+       
+    #TODO Handle exception if connection is not found, FK integrity issue    
+    conn_details = db_connection.ConnectionDetails(connection.username,connection.password, connection.hostname, connection.portnumber, connection.database_name)
+
+    database_type = connection.database_type.lower()
+    
+    conn_schema = db_factory.build(database_type)    
+    conn_schema.connect(conn_details)    
+    
+    for object in profile_details:
+    
+        #statment = "alter table schema.object ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
+        statement = _table_enable_cdc(database_type,object.source_region, object.object_name)    
+        result = conn_schema.execute_function(statement )    
+        #TOTO check the result and report on the status
+        
+    return redirect(url_for('profilelist'))
+    
+    
 @app.route("/scheduleinitsync/<profile_id>", methods=['GET','POST'])
 @login_required
 def scheduleinitsync(profile_id):
@@ -1064,6 +1121,8 @@ def _db_schema_query(dbtype_name):
         query = "SELECT distinct owner as schema_name FROM ALL_TABLES ORDER BY 1 "
     elif dbtype_name == const.MSSQL:
         query = "SELECT distinct table_schema as schema_name FROM INFORMATION_SCHEMA.COLUMNS;"
+    elif dbtype_name == const.POSTGRES:
+        query = "SELECT distinct table_schema as schema_name FROM INFORMATION_SCHEMA.COLUMNS;"    
     return query
 
 def _db_objects_query(dbtype_name, schema_name):
@@ -1072,6 +1131,8 @@ def _db_objects_query(dbtype_name, schema_name):
     if dbtype_name == const.ORACLE:
         query = "SELECT table_name from ALL_TABLES WHERE owner ='" + schema_name + "' ORDER BY 1"
     elif dbtype_name == const.MSSQL:
+        query = "SELECT distinct table_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '" + schema_name + "' ORDER BY 1"
+    elif dbtype_name == const.POSTGRES:
         query = "SELECT distinct table_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '" + schema_name + "' ORDER BY 1"
     return query    
 
@@ -1082,7 +1143,9 @@ def _db_objects_in_schemas_query(dbtype_name, schema_list):
         query ="SELECT owner as schema_name, table_name from ALL_TABLES WHERE owner IN (" + schema_list  + ") order by 1, 2"
     elif dbtype_name == const.MSSQL:
         query = "SELECT distinct table_schema as schema_name, table_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema IN (" + schema_list + ") ORDER BY 1,2"
-    return query    
+    elif dbtype_name == const.POSTGRES:
+        query = "SELECT distinct table_schema as schema_name, table_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema IN (" + schema_list + ") ORDER BY 1,2"
+    return query     
 
 
 def oneoff(command,replication_type):
@@ -1140,13 +1203,21 @@ def recurring(command,replication_type):
         out = "Script " + command + "Not found!!!"
     print('Scheduled recurring %s.' % command)
 
+def _table_enable_cdc(dbtype_name, schema_name, object_name):
+    
+    stetement = None
+    if dbtype_name == const.ORACLE:
+        stetement = "ALTER TABLE "+  schema_name + "." + object_name + "ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS"
+
+    return stetement  
+  
+
     
 if __name__ == "__main__":
    
    # start Scheduler
    scheduler.start()
 
-
    app.config["SECRET_KEY"] = "ITSASECRET"
    # start the web server on all IPs(0.0.0.0) at port 5000 as default
-   app.run(host=argv.httphost, port=argv.httpport)
+   app.run(host=argv.httphost, port=argv.httpport, threaded=argv.threaded, processes=argv.processes)

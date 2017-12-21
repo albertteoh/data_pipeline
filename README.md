@@ -1,8 +1,5 @@
 # Data Pipeline
 
-| Overview | [Initial Setup](/docs/INITIAL_SETUP.md) | [Design](/docs/design.md) |
-|----|----|----| 
-
 ## Synopsis
 
 Data Pipeline is a Python application for replicating data from source to
